@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 TextTrace — OSINT Dashboard</title>
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --bg-card: #131825;
+            --bg-card-hover: #1a2030;
+            --bg-input: #0d1219;
+            --border: #1e2638;
+            --border-hover: #2a3450;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --text-muted: #64748b;
+            --accent: #3b82f6;
+            --accent-dim: #1e40af;
+            --green: #22c55e;
+            --yellow: #eab308;
+            --orange: #f97316;
+            --red: #ef4444;
+            --purple: #a855f7;
+            --cyan: #06b6d4;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ─── Scrollbar ─── */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+        /* ─── Header ─── */
+        .header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left { display: flex; align-items: center; gap: 12px; }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--cyan), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-tag {
+            font-size: 11px;
+            color: var(--text-muted);
+            padding: 2px 8px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+        }
+
+        .header-right { display: flex; align-items: center; gap: 16px; }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            display: inline-block;
+        }
+
+        .status-dot.searching { background: var(--yellow); animation: pulse 1.5s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ─── Layout ─── */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+
+        /* ─── Search Panel ─── */
+        .search-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+        }
+
+        .panel-body { padding: 20px; }
+
+        .input-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            background: var(--bg-input);
+            padding: 4px;
+            border-radius: 8px;
+            width: fit-content;
+        }
+
+        .input-tab {
+            padding: 6px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-dim);
+            transition: all 0.2s;
+            border: none;
+            background: none;
+            font-family: inherit;
+        }
+
+        .input-tab.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        .input-tab:hover:not(.active) {
+            color: var(--text);
+            background: var(--border);
+        }
+
+        .input-group { margin-bottom: 16px; }
+
+        .input-label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        textarea, input[type="text"], input[type="number"], select {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+            line-height: 1.5;
+        }
+
+        textarea:focus, input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .options-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .option-item label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .checkbox-group input { width: auto; cursor: pointer; }
+
+        .search-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .search-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(59,130,246,0.3); }
+        .search-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ─── Progress Panel ─── */
+        .progress-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .progress-panel.active { display: block; }
+
+        .progress-body {
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .progress-line {
+            padding: 4px 0;
+            font-size: 13px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .progress-line .icon {
+            color: var(--cyan);
+            flex-shrink: 0;
+        }
+
+        .progress-line.warning .icon { color: var(--yellow); }
+        .progress-line.error .icon { color: var(--red); }
+        .progress-line.success .icon { color: var(--green); }
+
+        .progress-bar-container {
+            background: var(--bg-input);
+            border-radius: 6px;
+            height: 6px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--cyan), var(--accent));
+            border-radius: 6px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        /* ─── Stats Panel ─── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--cyan), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ─── Results ─── */
+        .results-panel { display: none; }
+        .results-panel.active { display: block; }
+
+        .results-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .results-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .results-actions { display: flex; gap: 8px; }
+
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .btn-sm:hover { border-color: var(--accent); color: var(--text); }
+
+        .match-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .match-card:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+        }
+
+        .match-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .match-left { display: flex; align-items: center; gap: 12px; }
+
+        .platform-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+        }
+
+        .tier-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .tier-exact { background: rgba(34,197,94,0.15); color: var(--green); }
+        .tier-fuzzy { background: rgba(234,179,8,0.15); color: var(--yellow); }
+        .tier-stylometric { background: rgba(168,85,247,0.15); color: var(--purple); }
+
+        .match-score {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .score-bar-container {
+            height: 4px;
+            background: var(--bg-input);
+            border-radius: 2px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+
+        .score-bar {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s;
+        }
+
+        .score-high { background: var(--green); }
+        .score-mid { background: var(--yellow); }
+        .score-low { background: var(--orange); }
+
+        .match-url {
+            color: var(--cyan);
+            font-size: 13px;
+            word-break: break-all;
+            text-decoration: none;
+        }
+
+        .match-url:hover { text-decoration: underline; }
+
+        .match-title {
+            color: var(--text);
+            font-size: 14px;
+            margin: 8px 0;
+        }
+
+        .match-details {
+            display: none;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .match-card.expanded .match-details { display: block; }
+
+        .score-table {
+            width: 100%;
+            font-size: 13px;
+        }
+
+        .score-table td {
+            padding: 4px 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .score-table td:first-child { color: var(--text-dim); width: 40%; }
+        .score-table td:last-child { text-align: right; font-weight: 600; }
+
+        /* ─── History Panel ─── */
+        .history-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .history-item:hover { border-color: var(--border-hover); background: var(--bg-card-hover); }
+
+        .history-left { flex: 1; min-width: 0; }
+        .history-preview {
+            color: var(--text-dim);
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .history-meta {
+            color: var(--text-muted);
+            font-size: 11px;
+            margin-top: 4px;
+            display: flex;
+            gap: 12px;
+        }
+        .history-right { display: flex; align-items: center; gap: 8px; }
+
+        .history-count {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        /* ─── No Results ─── */
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+        }
+
+        .no-results-icon { font-size: 48px; margin-bottom: 16px; }
+
+        /* ─── Responsive ─── */
+        @media (max-width: 768px) {
+            .container { padding: 12px; }
+            .options-row { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .header { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Header ─── -->
+<div class="header">
+    <div class="header-left">
+        <span class="logo">🔍 TextTrace</span>
+        <span class="header-tag">OSINT Dashboard</span>
+    </div>
+    <div class="header-right">
+        <span class="status-dot" id="statusDot"></span>
+        <span style="font-size:12px;color:var(--text-muted)" id="statusText">Ready</span>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- ─── Search Panel ─── -->
+    <div class="search-panel">
+        <div class="panel-header">
+            <span>🎯 New Search</span>
+        </div>
+        <div class="panel-body">
+            <!-- Input Tabs -->
+            <div class="input-tabs">
+                <button class="input-tab active" onclick="switchTab('text')" id="tab-text">📝 Text Input</button>
+                <button class="input-tab" onclick="switchTab('url')" id="tab-url">🔗 URL Source</button>
+            </div>
+
+            <!-- Text Input -->
+            <div class="input-group" id="text-input-group">
+                <label class="input-label">Source Text — the text you want to trace across platforms</label>
+                <textarea id="sourceText" placeholder="Paste the text you want to search for across the internet...&#10;&#10;e.g., 'I think AI will fundamentally change how we approach cybersecurity in the next decade'"></textarea>
+            </div>
+
+            <!-- URL Input -->
+            <div class="input-group" id="url-input-group" style="display:none">
+                <label class="input-label">Source URL — extract text from a web page</label>
+                <input type="text" id="sourceUrl" placeholder="https://facebook.com/somepost  or  https://twitter.com/user/status/123">
+            </div>
+
+            <!-- Options -->
+            <div class="options-row">
+                <div class="option-item">
+                    <label>Matching Tier</label>
+                    <select id="tier">
+                        <option value="all">All Tiers (recommended)</option>
+                        <option value="exact">Exact Only (hash match)</option>
+                        <option value="fuzzy">Fuzzy Only (near-duplicates)</option>
+                        <option value="stylometric">Stylometric (writing style)</option>
+                    </select>
+                </div>
+                <div class="option-item">
+                    <label>Search Engines</label>
+                    <select id="engines">
+                        <option value="duckduckgo,bing">DuckDuckGo + Bing</option>
+                        <option value="duckduckgo,bing,yandex">All Three (+ Yandex)</option>
+                        <option value="duckduckgo">DuckDuckGo Only</option>
+                        <option value="bing">Bing Only</option>
+                        <option value="duckduckgo,yandex">DDG + Yandex</option>
+                    </select>
+                </div>
+                <div class="option-item">
+                    <label>Threshold: <span id="thresholdValue" style="color:var(--accent)">50</span>%</label>
+                    <input type="range" id="threshold" min="0" max="100" value="50" style="accent-color:var(--accent)" oninput="document.getElementById('thresholdValue').textContent=this.value">
+                </div>
+                <div class="option-item">
+                    <label>Max Results / Engine</label>
+                    <input type="number" id="maxResults" value="15" min="5" max="50">
+                </div>
+            </div>
+
+            <div class="checkbox-group" onclick="document.getElementById('extractContent').click()">
+                <input type="checkbox" id="extractContent" checked>
+                <label style="cursor:pointer;font-size:13px;color:var(--text-dim)">Extract full page content (slower but more accurate — fetches & compares each result page)</label>
+            </div>
+
+            <div style="margin-top:16px">
+                <button class="search-btn" id="searchBtn" onclick="startSearch()">
+                    <span>🔍 Start Trace</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Progress Panel ─── -->
+    <div class="progress-panel" id="progressPanel">
+        <div class="panel-header">
+            <span>⚡ Live Progress</span>
+            <span id="elapsedTime" style="margin-left:auto;font-size:12px;color:var(--text-muted)"></span>
+        </div>
+        <div class="progress-body" id="progressBody"></div>
+        <div class="progress-bar-container" style="margin:0 20px 20px">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+    </div>
+
+    <!-- ─── Results ─── -->
+    <div class="results-panel" id="resultsPanel">
+        <!-- Stats -->
+        <div class="stats-grid" id="statsGrid"></div>
+
+        <!-- Match Cards -->
+        <div class="results-header">
+            <span class="results-title" id="resultsTitle">Matches</span>
+            <div class="results-actions">
+                <button class="btn-sm" onclick="exportJSON()">📥 Export JSON</button>
+                <button class="btn-sm" onclick="loadHistory()">📋 History</button>
+            </div>
+        </div>
+        <div id="matchList"></div>
+    </div>
+
+    <!-- ─── History Panel ─── -->
+    <div class="search-panel" id="historyPanel" style="display:none">
+        <div class="panel-header">
+            <span>📋 Search History</span>
+            <button class="btn-sm" onclick="document.getElementById('historyPanel').style.display='none'" style="margin-left:auto">✕ Close</button>
+        </div>
+        <div class="panel-body" id="historyList"></div>
+    </div>
+
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────
+let currentTab = 'text';
+let currentReport = null;
+let searchStartTime = null;
+let progressTimer = null;
+
+// ─── Tab Switching ────────────────────────────────────────────
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.getElementById('text-input-group').style.display = tab === 'text' ? 'block' : 'none';
+    document.getElementById('url-input-group').style.display = tab === 'url' ? 'block' : 'none';
+}
+
+// ─── Search ───────────────────────────────────────────────────
+function startSearch() {
+    const text = document.getElementById('sourceText').value.trim();
+    const url = document.getElementById('sourceUrl').value.trim();
+    const threshold = document.getElementById('threshold').value;
+    const tier = document.getElementById('tier').value;
+    const engines = document.getElementById('engines').value;
+    const maxResults = document.getElementById('maxResults').value;
+    const extractContent = document.getElementById('extractContent').checked;
+
+    if (currentTab === 'text' && !text) {
+        alert('Please enter source text');
+        return;
+    }
+    if (currentTab === 'url' && !url) {
+        alert('Please enter a URL');
+        return;
+    }
+
+    const payload = {
+        text: currentTab === 'text' ? text : '',
+        url: currentTab === 'url' ? url : '',
+        threshold: parseFloat(threshold),
+        tier: tier,
+        engines: engines,
+        max_results: parseInt(maxResults),
+        extract_content: extractContent,
+    };
+
+    // UI state
+    document.getElementById('searchBtn').disabled = true;
+    document.getElementById('searchBtn').innerHTML = '<span>⏳ Searching...</span>';
+    document.getElementById('statusDot').classList.add('searching');
+    document.getElementById('statusText').textContent = 'Searching...';
+    document.getElementById('progressPanel').classList.add('active');
+    document.getElementById('resultsPanel').classList.remove('active');
+    document.getElementById('progressBody').innerHTML = '';
+    document.getElementById('progressBar').style.width = '0%';
+
+    searchStartTime = Date.now();
+    updateElapsed();
+
+    fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) {
+            addProgressLine('error', data.error);
+            resetSearchUI();
+            return;
+        }
+        streamProgress(data.session_id);
+    })
+    .catch(err => {
+        addProgressLine('error', 'Request failed: ' + err.message);
+        resetSearchUI();
+    });
+}
+
+// ─── SSE Progress Stream ──────────────────────────────────────
+function streamProgress(sessionId) {
+    const evtSource = new EventSource(`/api/progress/${sessionId}`);
+
+    evtSource.onmessage = function(event) {
+        const msg = JSON.parse(event.data);
+
+        switch(msg.type) {
+            case 'extract':
+            case 'source':
+            case 'fingerprint':
+            case 'queries':
+            case 'searching':
+            case 'results':
+            case 'fetching':
+            case 'matching':
+                addProgressLine('info', msg.message);
+                updateProgressBar(msg);
+                break;
+            case 'warning':
+                addProgressLine('warning', msg.message);
+                break;
+            case 'keepalive':
+                break;
+            case 'complete':
+                currentReport = msg.report;
+                displayResults(msg.report);
+                addProgressLine('success', `✓ Search complete in ${msg.report.metadata.elapsed_seconds}s — ${msg.report.stats.matches_found} matches found`);
+                evtSource.close();
+                resetSearchUI();
+                break;
+            case 'error':
+                addProgressLine('error', msg.message);
+                evtSource.close();
+                resetSearchUI();
+                break;
+        }
+    };
+
+    evtSource.onerror = function() {
+        evtSource.close();
+    };
+}
+
+// ─── Progress UI ──────────────────────────────────────────────
+function addProgressLine(type, message) {
+    const body = document.getElementById('progressBody');
+    const line = document.createElement('div');
+    line.className = 'progress-line ' + (type === 'warning' ? 'warning' : type === 'error' ? 'error' : type === 'success' ? 'success' : '');
+
+    const icons = { info: '▸', warning: '⚠', error: '✗', success: '✓' };
+    line.innerHTML = `<span class="icon">${icons[type] || '▸'}</span><span>${escapeHtml(message)}</span>`;
+    body.appendChild(line);
+    body.scrollTop = body.scrollHeight;
+}
+
+function updateProgressBar(msg) {
+    const bar = document.getElementById('progressBar');
+    let pct = 0;
+    if (msg.type === 'extract') pct = 5;
+    else if (msg.type === 'source') pct = 10;
+    else if (msg.type === 'fingerprint') pct = 12;
+    else if (msg.type === 'queries') pct = 15;
+    else if (msg.type === 'searching') pct = 30;
+    else if (msg.type === 'results') pct = 50;
+    else if (msg.type === 'fetching') pct = 50 + (msg.current / msg.total) * 35;
+    else if (msg.type === 'matching') pct = 90;
+
+    bar.style.width = pct + '%';
+}
+
+function updateElapsed() {
+    if (!searchStartTime) return;
+    const elapsed = Math.floor((Date.now() - searchStartTime) / 1000);
+    document.getElementById('elapsedTime').textContent = `⏱ ${elapsed}s`;
+    progressTimer = setTimeout(updateElapsed, 1000);
+}
+
+function resetSearchUI() {
+    clearTimeout(progressTimer);
+    document.getElementById('searchBtn').disabled = false;
+    document.getElementById('searchBtn').innerHTML = '<span>🔍 Start Trace</span>';
+    document.getElementById('statusDot').classList.remove('searching');
+    document.getElementById('statusText').textContent = 'Ready';
+    document.getElementById('progressBar').style.width = '100%';
+}
+
+// ─── Results Display ──────────────────────────────────────────
+function displayResults(report) {
+    document.getElementById('resultsPanel').classList.add('active');
+    document.getElementById('progressPanel').classList.remove('active');
+
+    const meta = report.metadata;
+    const stats = report.stats;
+    const matches = report.matches;
+
+    // Stats
+    const platforms = stats.platforms_matched || [];
+    const tiers = stats.match_tiers || {};
+
+    document.getElementById('statsGrid').innerHTML = `
+        <div class="stat-card">
+            <div class="stat-value">${stats.matches_found}</div>
+            <div class="stat-label">Matches Found</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${stats.results_scanned}</div>
+            <div class="stat-label">Results Scanned</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${platforms.length}</div>
+            <div class="stat-label">Platforms Hit</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${meta.elapsed_seconds}s</div>
+            <div class="stat-label">Elapsed Time</div>
+        </div>
+    `;
+
+    // Title
+    document.getElementById('resultsTitle').textContent = `Matches (${matches.length})`;
+
+    // Match cards
+    const list = document.getElementById('matchList');
+
+    if (matches.length === 0) {
+        list.innerHTML = `
+            <div class="no-results">
+                <div class="no-results-icon">🔍</div>
+                <div>No matches found above ${meta.threshold}% threshold</div>
+                <div style="margin-top:8px;font-size:13px">Try lowering the threshold or using more search engines</div>
+            </div>
+        `;
+        return;
+    }
+
+    list.innerHTML = matches.map((m, i) => {
+        const scoreClass = m.max_score >= 80 ? 'score-high' : m.max_score >= 60 ? 'score-mid' : 'score-low';
+        const tierClass = m.match_tier && m.match_tier.startsWith('exact') ? 'tier-exact' :
+                          m.match_tier && m.match_tier.startsWith('fuzzy') ? 'tier-fuzzy' : 'tier-stylometric';
+        const tierLabel = m.match_tier || 'unknown';
+
+        // Score breakdown
+        let scoreRows = '';
+        for (const [name, val] of Object.entries(m.scores)) {
+            if (typeof val === 'object') {
+                for (const [k, v] of Object.entries(val)) {
+                    scoreRows += `<tr><td>${name}.${k}</td><td>${typeof v === 'number' ? v.toFixed(1) : v}</td></tr>`;
+                }
+            } else {
+                scoreRows += `<tr><td>${name}</td><td>${val.toFixed(1)}</td></tr>`;
+            }
+        }
+
+        return `
+            <div class="match-card" onclick="this.classList.toggle('expanded')">
+                <div class="match-header">
+                    <div class="match-left">
+                        <span class="platform-badge">${m.platform}</span>
+                        <span class="tier-badge ${tierClass}">${tierLabel}</span>
+                        <span style="font-size:11px;color:var(--text-muted)">${m.engine}</span>
+                    </div>
+                    <div class="match-score" style="color:var(--${m.max_score >= 80 ? 'green' : m.max_score >= 60 ? 'yellow' : 'orange'})">${m.max_score.toFixed(1)}%</div>
+                </div>
+                <div class="score-bar-container">
+                    <div class="score-bar ${scoreClass}" style="width:${m.max_score}%"></div>
+                </div>
+                <div class="match-title">${escapeHtml(m.title)}</div>
+                <a href="${m.url}" target="_blank" class="match-url" onclick="event.stopPropagation()">${escapeHtml(m.url)}</a>
+                <div class="match-details">
+                    <table class="score-table">
+                        <tr><td>URL</td><td><a href="${m.url}" target="_blank" class="match-url">${escapeHtml(m.url)}</a></td></tr>
+                        <tr><td>Title</td><td>${escapeHtml(m.title)}</td></tr>
+                        <tr><td>Platform</td><td>${m.platform}</td></tr>
+                        <tr><td>Engine</td><td>${m.engine}</td></tr>
+                        <tr><td>Match Tier</td><td>${tierLabel}</td></tr>
+                        <tr><td>Max Score</td><td>${m.max_score.toFixed(1)}%</td></tr>
+                        ${scoreRows}
+                    </table>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ─── Export ───────────────────────────────────────────────────
+function exportJSON() {
+    if (!currentReport) return;
+    const blob = new Blob([JSON.stringify(currentReport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `texttrace-report-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ─── History ──────────────────────────────────────────────────
+function loadHistory() {
+    fetch('/api/history')
+    .then(r => r.json())
+    .then(data => {
+        const panel = document.getElementById('historyPanel');
+        const list = document.getElementById('historyList');
+        panel.style.display = 'block';
+
+        if (data.history.length === 0) {
+            list.innerHTML = '<div class="no-results"><div class="no-results-icon">📋</div>No search history yet</div>';
+            return;
+        }
+
+        list.innerHTML = data.history.map(h => `
+            <div class="history-item" onclick="loadHistoryDetail('${h.id}')">
+                <div class="history-left">
+                    <div class="history-preview">${escapeHtml(h.source_preview)}</div>
+                    <div class="history-meta">
+                        <span>🕐 ${new Date(h.timestamp).toLocaleString()}</span>
+                        <span>⏱ ${h.elapsed}s</span>
+                        <span>📊 ${h.results_scanned} scanned</span>
+                        ${h.platforms.length > 0 ? `<span>🌐 ${h.platforms.join(', ')}</span>` : ''}
+                    </div>
+                </div>
+                <div class="history-right">
+                    <span class="history-count">${h.matches}</span>
+                    <span style="font-size:11px;color:var(--text-muted)">matches</span>
+                </div>
+            </div>
+        `).join('');
+    });
+}
+
+function loadHistoryDetail(id) {
+    fetch(`/api/history/${id}`)
+    .then(r => r.json())
+    .then(report => {
+        currentReport = report;
+        displayResults(report);
+        document.getElementById('historyPanel').style.display = 'none';
+    });
+}
+
+// ─── Utils ────────────────────────────────────────────────────
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// ─── Init ─────────────────────────────────────────────────────
+// Check health on load
+fetch('/api/health').then(r => r.json()).then(data => {
+    if (!data.rapidfuzz) {
+        addProgressLine('warning', '⚠ rapidfuzz not installed — fuzzy matching disabled. Run: pip install rapidfuzz');
+        document.getElementById('progressPanel').classList.add('active');
+    }
+});
+</script>
+
+</body>
+</html>

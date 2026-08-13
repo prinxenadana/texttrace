@@ -171,6 +171,61 @@ No paid APIs. No rate-limited free tiers. No sign-ups.
 
 ---
 
+## 🖥️ Web Dashboard
+
+TextTrace includes a **local web dashboard** — a modern, dark-themed OSINT UI that runs in your browser. No more CLI arguments — just open the dashboard, paste your text, and watch results stream in real-time.
+
+### Quick Start
+
+```bash
+# Install dashboard dependencies (includes Flask + texttrace deps)
+pip install -r dashboard-requirements.txt
+
+# Launch the dashboard
+python app.py
+
+# → Open http://localhost:5000 in your browser
+```
+
+### Dashboard Features
+
+| Feature | Description |
+|---------|-------------|
+| **Text / URL Input** | Paste source text or provide a URL to extract from |
+| **Tier Selection** | Choose exact, fuzzy, stylometric, or all matching tiers |
+| **Engine Selection** | Pick which search engines to use (DDG, Bing, Yandex) |
+| **Threshold Slider** | Adjust match sensitivity from 0-100% |
+| **Live Progress** | Real-time SSE streaming of search progress (queries, engine status, page fetching) |
+| **Stats Dashboard** | At-a-glance stats: matches found, results scanned, platforms hit, elapsed time |
+| **Match Cards** | Expandable cards with platform badges, tier indicators, score bars, and full score breakdowns |
+| **Search History** | All past searches saved locally — click to reload any previous report |
+| **JSON Export** | Download any report as JSON with one click |
+
+### Network Access
+
+By default the dashboard runs on `127.0.0.1:5000` (localhost only). To allow access from other machines on your network:
+
+```bash
+python app.py --host 0.0.0.0 --port 8080
+```
+
+⚠️ **Warning**: Exposing the dashboard to the network means anyone with access to your IP can use it. Only do this on trusted networks.
+
+### Dashboard Architecture
+
+```
+Browser (UI)  ←──SSE──→  Flask (app.py)  ──→  texttrace.py
+     │                         │
+     │                         ├── /api/search (POST) → starts background search
+     │                         ├── /api/progress/<id> (SSE stream) → real-time updates
+     │                         ├── /api/history (GET) → past searches
+     │                         └── /api/history/<id>/download (GET) → JSON export
+     │
+     └── data/history/*.json → locally saved reports
+```
+
+---
+
 ## 🤝 Contributing
 
 1. Fork the repo

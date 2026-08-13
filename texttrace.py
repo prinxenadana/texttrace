@@ -524,6 +524,7 @@ def run_texttrace(
     max_results: int = 15,
     extract_content: bool = True,
     verbose: bool = False,
+    progress_callback=None,
 ) -> dict:
     """
     Main TextTrace pipeline.
@@ -537,37 +538,44 @@ def run_texttrace(
         max_results: Max results per engine
         extract_content: Whether to scrape result pages for full text comparison
         verbose: Print detailed progress
+        progress_callback: Optional callable(msg_dict) for progress updates (web UI)
 
     Returns:
         Dict with matches, stats, and metadata
     """
+    def _emit(msg_type, message, **extra):
+        """Send progress to callback and print."""
+        print(message)
+        if progress_callback:
+            progress_callback({"type": msg_type, "message": message, **extra})
+
     start_time = time.time()
 
     # ── Step 1: Get source text ──
     if source_url:
-        print(f"[*] Extracting text from: {source_url}")
+        _emit("extract", f"[*] Extracting text from: {source_url}")
         extracted = extract_text_from_url(source_url)
         if extracted:
             source_text = extracted
-            print(f"    Extracted {len(source_text)} characters")
+            _emit("extract", f"    Extracted {len(source_text)} characters")
         else:
-            print("    [!] Failed to extract text, using provided text if any")
+            _emit("warning", "    [!] Failed to extract text, using provided text if any")
 
     if not source_text:
         return {"error": "No source text provided", "matches": []}
 
-    print(f"\n[*] Source text ({len(source_text)} chars):")
     preview = source_text[:200] + ("..." if len(source_text) > 200 else "")
-    print(f"    \"{preview}\"")
+    _emit("source", f"[*] Source text ({len(source_text)} chars): \"{preview}\"")
 
     src_fingerprint = text_fingerprint(source_text)
-    print(f"    Fingerprint: {src_fingerprint[:16]}...")
+    _emit("fingerprint", f"    Fingerprint: {src_fingerprint[:16]}...", fingerprint=src_fingerprint)
 
     # ── Step 2: Generate search queries ──
     queries = generate_search_queries(source_text)
-    print(f"\n[*] Generated {len(queries)} search queries:")
+    _emit("queries", f"[*] Generated {len(queries)} search queries:", queries=queries)
     for i, q in enumerate(queries):
-        print(f"    {i+1}. {q[:80]}{'...' if len(q) > 80 else ''}")
+        if verbose:
+            print(f"    {i+1}. {q[:80]}{'...' if len(q) > 80 else ''}")
 
     # ── Step 3: Search engines ──
     if engines is None:
@@ -577,7 +585,7 @@ def run_texttrace(
     seen_urls = set()
 
     for engine in engines:
-        print(f"\n[*] Searching {engine}...")
+        _emit("searching", f"[*] Searching {engine}...")
         for qi, query in enumerate(queries[:8]):  # Up to 8 queries per engine
             if verbose:
                 print(f"    Query {qi+1}/{min(len(queries),8)}: {query[:70]}...")
@@ -606,7 +614,7 @@ def run_texttrace(
             else:
                 time.sleep(3)
 
-    print(f"\n[*] Found {len(all_results)} unique results from search engines")
+    _emit("results", f"[*] Found {len(all_results)} unique results from search engines", count=len(all_results))
 
     # ── Step 4: Extract & match ──
     matches = []
@@ -653,6 +661,7 @@ def run_texttrace(
         if extract_content and match_data["max_score"] < threshold:
             if verbose:
                 print(f"    Fetching page {i+1}/{len(all_results)}: {result['url'][:60]}...")
+            _emit("fetching", f"    [{i+1}/{len(all_results)}] Fetching: {result['url'][:80]}...", current=i+1, total=len(all_results))
             page_text = extract_text_from_url(result['url'])
 
             if page_text and len(page_text) > 20:
@@ -700,6 +709,7 @@ def run_texttrace(
     matches.sort(key=lambda x: x['max_score'], reverse=True)
 
     elapsed = time.time() - start_time
+    _emit("matching", f"[*] Matching complete: {len(matches)} matches found above {threshold}% threshold", matches_count=len(matches))
 
     # ── Step 5: Build report ──
     report = {

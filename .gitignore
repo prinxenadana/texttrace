@@ -8,3 +8,4 @@ build/
 .env
 *.json
 !package.json
+data/history/
