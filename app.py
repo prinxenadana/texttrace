@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-TextTrace Web Dashboard — Local web UI for the TextTrace OSINT tool.
-Serves a modern dashboard interface that wraps texttrace.py.
+TextTrace Web Dashboard v2 — Local web UI for the TextTrace OSINT tool.
+Serves a modern dashboard interface that wraps texttrace.py v2.
 
 Usage:
     python app.py                  # Default: http://localhost:5000
@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import json
 import os
 import queue
@@ -31,7 +32,7 @@ app = Flask(__name__)
 HISTORY_DIR = Path(__file__).parent / "data" / "history"
 HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-# Active search sessions: {session_id: {"queue": Queue, "report": dict, "status": str}}
+# Active search sessions
 SESSIONS = {}
 
 
@@ -56,8 +57,21 @@ def api_search():
     tier = data.get("tier", "all")
     engines = data.get("engines", "duckduckgo,bing").split(",")
     engines = [e.strip() for e in engines if e.strip()]
+    if "all" in engines:
+        engines = ["duckduckgo", "bing", "yandex", "google"]
     max_results = int(data.get("max_results", 15))
     extract_content = data.get("extract_content", True)
+    site = data.get("site", "").strip() or None
+    exclude = data.get("exclude", "").strip() or None
+    tor = data.get("tor", False)
+    proxy = data.get("proxy", "").strip() or None
+    stealth = data.get("stealth", False)
+    aggressive = data.get("aggressive", False)
+    check_archives = data.get("check_archives", True)
+    check_paste = data.get("check_paste", True)
+    check_google = data.get("check_google", True)
+    chain = data.get("chain", False)
+    chain_depth = int(data.get("chain_depth", 1))
 
     if not source_text and not source_url:
         return jsonify({"error": "Either text or url is required"}), 400
@@ -75,22 +89,36 @@ def api_search():
         msg_queue.put(msg)
 
     def run_search():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            report = texttrace.run_texttrace(
-                source_text=source_text,
-                source_url=source_url if source_url else None,
-                threshold=threshold,
-                tier=tier,
-                engines=engines,
-                max_results=max_results,
-                extract_content=extract_content,
-                verbose=False,
-                progress_callback=progress_callback,
+            report = loop.run_until_complete(
+                texttrace.run_texttrace(
+                    source_text=source_text,
+                    source_url=source_url if source_url else None,
+                    threshold=threshold,
+                    tier=tier,
+                    engines=engines,
+                    max_results=max_results,
+                    extract_content=extract_content,
+                    verbose=False,
+                    progress_callback=progress_callback,
+                    site=site,
+                    exclude=exclude,
+                    tor=tor,
+                    proxy=proxy,
+                    stealth=stealth,
+                    aggressive=aggressive,
+                    check_archives=check_archives,
+                    check_paste_sites=check_paste,
+                    check_google=check_google,
+                    chain_mode=chain,
+                    chain_depth=chain_depth,
+                )
             )
             SESSIONS[session_id]["report"] = report
             SESSIONS[session_id]["status"] = "completed"
 
-            # Save to history
             if "error" not in report:
                 save_history(session_id, report)
 
@@ -98,6 +126,8 @@ def api_search():
         except Exception as e:
             SESSIONS[session_id]["status"] = "error"
             msg_queue.put({"type": "error", "message": str(e)})
+        finally:
+            loop.close()
 
     thread = threading.Thread(target=run_search, daemon=True)
     thread.start()
@@ -124,10 +154,8 @@ def api_progress(session_id):
                 if msg.get("type") in ("complete", "error"):
                     break
             except queue.Empty:
-                # Send keepalive
                 yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
 
-                # Check if session is done
                 if session["status"] in ("completed", "error"):
                     if session["report"]:
                         yield f"data: {json.dumps({'type': 'complete', 'report': session['report']})}\n\n"
@@ -154,6 +182,7 @@ def api_history():
                 data = json.load(fh)
                 meta = data.get("metadata", {})
                 stats = data.get("stats", {})
+                id_graph = data.get("identity_graph", {})
                 history.append({
                     "id": f.stem,
                     "timestamp": meta.get("timestamp", ""),
@@ -162,6 +191,8 @@ def api_history():
                     "results_scanned": stats.get("results_scanned", 0),
                     "elapsed": meta.get("elapsed_seconds", 0),
                     "platforms": stats.get("platforms_matched", []),
+                    "confidence": stats.get("confidence_levels", {}),
+                    "identity_links": len(id_graph.get("links", [])),
                 })
         except Exception:
             continue
@@ -195,15 +226,42 @@ def api_history_download(search_id):
     )
 
 
+@app.route("/api/history/<search_id>/pdf")
+def api_history_pdf(search_id):
+    """Generate and download a PDF report."""
+    filepath = HISTORY_DIR / f"{search_id}.json"
+    if not filepath.exists():
+        return jsonify({"error": "Not found"}), 404
+
+    with open(filepath) as f:
+        report = json.load(f)
+
+    pdf_path = HISTORY_DIR / f"texttrace-report-{search_id}.pdf"
+    texttrace.generate_pdf_report(report, str(pdf_path))
+
+    if pdf_path.exists():
+        return send_file(
+            pdf_path,
+            as_attachment=True,
+            download_name=f"texttrace-report-{search_id}.pdf",
+            mimetype="application/pdf",
+        )
+    else:
+        return jsonify({"error": "PDF generation failed — is fpdf2 installed?"}), 500
+
+
 @app.route("/api/health")
 def api_health():
-    """Health check."""
+    """Health check with feature flags."""
     return jsonify({
         "status": "ok",
-        "texttrace_version": "1.0",
+        "texttrace_version": "2.0",
         "rapidfuzz": texttrace.HAS_RAPIDFUZZ,
         "sklearn": texttrace.HAS_SKLEARN,
+        "fpdf": texttrace.HAS_FPDF,
+        "curl_cffi": texttrace.HAS_CURL_CFFI,
         "active_sessions": len([s for s in SESSIONS.values() if s["status"] == "running"]),
+        "platforms": len(texttrace.PLATFORM_PATTERNS),
     })
 
 
@@ -216,38 +274,19 @@ def save_history(session_id, report):
         json.dump(report, f, indent=2, default=str)
 
 
-# ─── Cleanup ───────────────────────────────────────────────────────────────────
-
-def cleanup_old_sessions():
-    """Remove sessions older than 1 hour."""
-    cutoff = time.time() - 3600
-    to_remove = []
-    for sid, session in SESSIONS.items():
-        started = session.get("started_at", "")
-        if started:
-            try:
-                ts = datetime.fromisoformat(started).timestamp()
-                if ts < cutoff and session["status"] != "running":
-                    to_remove.append(sid)
-            except Exception:
-                pass
-    for sid in to_remove:
-        del SESSIONS[sid]
-
-
 # ─── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="TextTrace Web Dashboard — Local web UI for TextTrace OSINT tool",
+        description="TextTrace Web Dashboard v2 — Local web UI for TextTrace OSINT tool",
     )
-    parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1, use 0.0.0.0 for network access)")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5000, help="Port to bind (default: 5000)")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
     print(f"\n  ╔══════════════════════════════════════════════════╗")
-    print(f"  ║  🔍 TextTrace Web Dashboard                       ║")
+    print(f"  ║  🔍 TextTrace Web Dashboard v2                    ║")
     print(f"  ╠══════════════════════════════════════════════════╣")
     print(f"  ║  URL: http://{args.host}:{args.port:<32} ║" if len(f"http://{args.host}:{args.port}") <= 34 else f"  ║  URL: http://{args.host}:{args.port:<34}║")
     print(f"  ║  Mode: {'debug' if args.debug else 'production':<37} ║")

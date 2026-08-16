@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔍 TextTrace — OSINT Dashboard</title>
+    <title>🔍 TextTrace v2 — OSINT Dashboard</title>
     <style>
         :root {
             --bg: #0a0e17;
@@ -24,514 +24,151 @@
             --purple: #a855f7;
             --cyan: #06b6d4;
         }
-
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            min-height: 100vh;
-        }
-
-        /* ─── Scrollbar ─── */
+        body { background: var(--bg); color: var(--text); font-family: 'JetBrains Mono','Fira Code','SF Mono','Consolas',monospace; font-size: 14px; line-height: 1.6; min-height: 100vh; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
-        /* ─── Header ─── */
-        .header {
-            background: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-            padding: 16px 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            backdrop-filter: blur(10px);
-        }
-
+        .header { background: var(--bg-card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); }
         .header-left { display: flex; align-items: center; gap: 12px; }
-
-        .logo {
-            font-size: 20px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--cyan), var(--accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .header-tag {
-            font-size: 11px;
-            color: var(--text-muted);
-            padding: 2px 8px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: 4px;
-        }
-
+        .logo { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, var(--cyan), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header-tag { font-size: 11px; color: var(--text-muted); padding: 2px 8px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; }
         .header-right { display: flex; align-items: center; gap: 16px; }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--green);
-            display: inline-block;
-        }
-
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
         .status-dot.searching { background: var(--yellow); animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; display: grid; grid-template-columns: 1fr; gap: 24px; }
 
-        /* ─── Layout ─── */
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 24px;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 24px;
-        }
-
-        /* ─── Search Panel ─── */
-        .search-panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .panel-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-dim);
-        }
-
+        .search-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .panel-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
         .panel-body { padding: 20px; }
 
-        .input-tabs {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 16px;
-            background: var(--bg-input);
-            padding: 4px;
-            border-radius: 8px;
-            width: fit-content;
-        }
-
-        .input-tab {
-            padding: 6px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 13px;
-            color: var(--text-dim);
-            transition: all 0.2s;
-            border: none;
-            background: none;
-            font-family: inherit;
-        }
-
-        .input-tab.active {
-            background: var(--accent);
-            color: white;
-        }
-
-        .input-tab:hover:not(.active) {
-            color: var(--text);
-            background: var(--border);
-        }
+        .input-tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--bg-input); padding: 4px; border-radius: 8px; width: fit-content; }
+        .input-tab { padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text-dim); transition: all 0.2s; border: none; background: none; font-family: inherit; }
+        .input-tab.active { background: var(--accent); color: white; }
+        .input-tab:hover:not(.active) { color: var(--text); background: var(--border); }
 
         .input-group { margin-bottom: 16px; }
+        .input-label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; display: block; }
+        textarea, input[type="text"], input[type="number"], select { width: 100%; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 12px; color: var(--text); font-family: inherit; font-size: 14px; transition: border-color 0.2s; }
+        textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+        textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
 
-        .input-label {
-            font-size: 12px;
-            color: var(--text-dim);
-            margin-bottom: 6px;
-            display: block;
-        }
+        .options-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .option-item label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; display: block; }
+        select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+        input[type="range"] { accent-color: var(--accent); width: 100%; }
 
-        textarea, input[type="text"], input[type="number"], select {
-            width: 100%;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px;
-            color: var(--text);
-            font-family: inherit;
-            font-size: 14px;
-            transition: border-color 0.2s;
-        }
-
-        textarea {
-            min-height: 120px;
-            resize: vertical;
-            line-height: 1.5;
-        }
-
-        textarea:focus, input:focus, select:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        .options-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .option-item label {
-            font-size: 12px;
-            color: var(--text-dim);
-            margin-bottom: 6px;
-            display: block;
-        }
-
-        select {
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 12px center;
-            padding-right: 36px;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            cursor: pointer;
-        }
-
+        .checkbox-group { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text-dim); }
         .checkbox-group input { width: auto; cursor: pointer; }
 
-        .search-btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-dim));
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
+        .opsec-section { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .opsec-title { font-size: 13px; font-weight: 600; color: var(--orange); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+        .opsec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
 
+        .search-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: white; border: none; border-radius: 8px; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .search-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(59,130,246,0.3); }
         .search-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-        /* ─── Progress Panel ─── */
-        .progress-panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            overflow: hidden;
-            display: none;
-        }
-
+        .progress-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: none; }
         .progress-panel.active { display: block; }
-
-        .progress-body {
-            padding: 20px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .progress-line {
-            padding: 4px 0;
-            font-size: 13px;
-            color: var(--text-dim);
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-        }
-
-        .progress-line .icon {
-            color: var(--cyan);
-            flex-shrink: 0;
-        }
-
+        .progress-body { padding: 20px; max-height: 400px; overflow-y: auto; }
+        .progress-line { padding: 4px 0; font-size: 13px; color: var(--text-dim); display: flex; align-items: flex-start; gap: 8px; }
+        .progress-line .icon { color: var(--cyan); flex-shrink: 0; }
         .progress-line.warning .icon { color: var(--yellow); }
         .progress-line.error .icon { color: var(--red); }
         .progress-line.success .icon { color: var(--green); }
+        .progress-line.opsec .icon { color: var(--orange); }
+        .progress-line.chain .icon { color: var(--purple); }
+        .progress-bar-container { background: var(--bg-input); border-radius: 6px; height: 6px; overflow: hidden; margin: 0 20px 20px; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--accent)); border-radius: 6px; transition: width 0.5s ease; width: 0%; }
 
-        .progress-bar-container {
-            background: var(--bg-input);
-            border-radius: 6px;
-            height: 6px;
-            overflow: hidden;
-            margin-top: 12px;
-        }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; }
+        .stat-value { font-size: 28px; font-weight: 700; background: linear-gradient(135deg, var(--cyan), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 2px; }
+        .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--cyan), var(--accent));
-            border-radius: 6px;
-            transition: width 0.5s ease;
-            width: 0%;
-        }
-
-        /* ─── Stats Panel ─── */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-
-        .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-        }
-
-        .stat-value {
-            font-size: 32px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--cyan), var(--accent));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 4px;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        /* ─── Results ─── */
         .results-panel { display: none; }
         .results-panel.active { display: block; }
-
-        .results-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 16px;
-        }
-
-        .results-title {
-            font-size: 16px;
-            font-weight: 600;
-        }
-
+        .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+        .results-title { font-size: 16px; font-weight: 600; }
         .results-actions { display: flex; gap: 8px; }
-
-        .btn-sm {
-            padding: 6px 14px;
-            font-size: 12px;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            background: var(--bg-card);
-            color: var(--text-dim);
-            cursor: pointer;
-            transition: all 0.2s;
-            font-family: inherit;
-        }
-
+        .btn-sm { padding: 6px 14px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dim); cursor: pointer; transition: all 0.2s; font-family: inherit; }
         .btn-sm:hover { border-color: var(--accent); color: var(--text); }
 
-        .match-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 12px;
-            transition: all 0.2s;
-            cursor: pointer;
-        }
-
-        .match-card:hover {
-            border-color: var(--border-hover);
-            background: var(--bg-card-hover);
-        }
-
-        .match-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .match-left { display: flex; align-items: center; gap: 12px; }
-
-        .platform-badge {
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            background: var(--bg-input);
-            border: 1px solid var(--border);
-            color: var(--text-dim);
-        }
-
-        .tier-badge {
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
+        .match-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 10px; transition: all 0.2s; cursor: pointer; }
+        .match-card:hover { border-color: var(--border-hover); background: var(--bg-card-hover); }
+        .match-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
+        .match-left { display: flex; align-items: center; gap: 8px; }
+        .platform-badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-dim); }
+        .tier-badge { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
         .tier-exact { background: rgba(34,197,94,0.15); color: var(--green); }
         .tier-fuzzy { background: rgba(234,179,8,0.15); color: var(--yellow); }
         .tier-stylometric { background: rgba(168,85,247,0.15); color: var(--purple); }
-
-        .match-score {
-            font-size: 24px;
-            font-weight: 700;
-        }
-
-        .score-bar-container {
-            height: 4px;
-            background: var(--bg-input);
-            border-radius: 2px;
-            margin: 8px 0;
-            overflow: hidden;
-        }
-
-        .score-bar {
-            height: 100%;
-            border-radius: 2px;
-            transition: width 0.5s;
-        }
-
+        .confidence-badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+        .conf-high { background: rgba(34,197,94,0.2); color: var(--green); }
+        .conf-medium { background: rgba(234,179,8,0.2); color: var(--yellow); }
+        .conf-low { background: rgba(249,115,22,0.2); color: var(--orange); }
+        .conf-unverified { background: rgba(100,116,139,0.2); color: var(--text-muted); }
+        .match-score { font-size: 22px; font-weight: 700; }
+        .score-bar-container { height: 4px; background: var(--bg-input); border-radius: 2px; margin: 6px 0; overflow: hidden; }
+        .score-bar { height: 100%; border-radius: 2px; transition: width 0.5s; }
         .score-high { background: var(--green); }
         .score-mid { background: var(--yellow); }
         .score-low { background: var(--orange); }
-
-        .match-url {
-            color: var(--cyan);
-            font-size: 13px;
-            word-break: break-all;
-            text-decoration: none;
-        }
-
+        .match-url { color: var(--cyan); font-size: 12px; word-break: break-all; text-decoration: none; }
         .match-url:hover { text-decoration: underline; }
-
-        .match-title {
-            color: var(--text);
-            font-size: 14px;
-            margin: 8px 0;
-        }
-
-        .match-details {
-            display: none;
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border);
-        }
-
+        .match-title { color: var(--text); font-size: 13px; margin: 6px 0; }
+        .match-details { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
         .match-card.expanded .match-details { display: block; }
-
-        .score-table {
-            width: 100%;
-            font-size: 13px;
-        }
-
-        .score-table td {
-            padding: 4px 8px;
-            border-bottom: 1px solid var(--border);
-        }
-
+        .score-table { width: 100%; font-size: 12px; }
+        .score-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); }
         .score-table td:first-child { color: var(--text-dim); width: 40%; }
         .score-table td:last-child { text-align: right; font-weight: 600; }
+        .entity-list { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+        .entity-tag { padding: 2px 8px; border-radius: 4px; font-size: 11px; background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.3); color: var(--purple); }
+        .diff-container { font-size: 12px; max-height: 200px; overflow-y: auto; margin-top: 8px; background: var(--bg-input); border-radius: 6px; padding: 10px; }
+        .diff-equal { color: var(--text-dim); }
+        .diff-removed { color: var(--red); background: rgba(239,68,68,0.1); padding: 1px 4px; }
+        .diff-added { color: var(--green); background: rgba(34,197,94,0.1); padding: 1px 4px; }
 
-        /* ─── History Panel ─── */
-        .history-item {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px 16px;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
+        .identity-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+        .identity-title { font-size: 14px; font-weight: 600; color: var(--cyan); margin-bottom: 10px; }
+        .identity-link { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12px; color: var(--text-dim); }
+        .identity-link .arrow { color: var(--accent); }
 
+        .next-steps { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+        .next-steps-title { font-size: 14px; font-weight: 600; color: var(--yellow); margin-bottom: 10px; }
+        .next-step { padding: 6px 0; font-size: 13px; color: var(--text-dim); }
+
+        .history-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; }
         .history-item:hover { border-color: var(--border-hover); background: var(--bg-card-hover); }
-
         .history-left { flex: 1; min-width: 0; }
-        .history-preview {
-            color: var(--text-dim);
-            font-size: 13px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .history-meta {
-            color: var(--text-muted);
-            font-size: 11px;
-            margin-top: 4px;
-            display: flex;
-            gap: 12px;
-        }
-        .history-right { display: flex; align-items: center; gap: 8px; }
+        .history-preview { color: var(--text-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-meta { color: var(--text-muted); font-size: 10px; margin-top: 3px; display: flex; gap: 10px; }
+        .history-right { display: flex; align-items: center; gap: 6px; }
+        .history-count { font-size: 16px; font-weight: 700; color: var(--accent); }
 
-        .history-count {
-            font-size: 18px;
-            font-weight: 700;
-            color: var(--accent);
-        }
+        .no-results { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+        .no-results-icon { font-size: 40px; margin-bottom: 12px; }
 
-        /* ─── No Results ─── */
-        .no-results {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-muted);
-        }
-
-        .no-results-icon { font-size: 48px; margin-bottom: 16px; }
-
-        /* ─── Responsive ─── */
         @media (max-width: 768px) {
             .container { padding: 12px; }
-            .options-row { grid-template-columns: 1fr; }
+            .options-row { grid-template-columns: 1fr 1fr; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .header { padding: 12px 16px; }
+            .opsec-grid { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
 <body>
 
-<!-- ─── Header ─── -->
 <div class="header">
     <div class="header-left">
         <span class="logo">🔍 TextTrace</span>
-        <span class="header-tag">OSINT Dashboard</span>
+        <span class="header-tag">v2 OSINT</span>
     </div>
     <div class="header-right">
         <span class="status-dot" id="statusDot"></span>
@@ -541,54 +178,50 @@
 
 <div class="container">
 
-    <!-- ─── Search Panel ─── -->
+    <!-- Search Panel -->
     <div class="search-panel">
-        <div class="panel-header">
-            <span>🎯 New Search</span>
-        </div>
+        <div class="panel-header"><span>🎯 New Search</span></div>
         <div class="panel-body">
-            <!-- Input Tabs -->
             <div class="input-tabs">
-                <button class="input-tab active" onclick="switchTab('text')" id="tab-text">📝 Text Input</button>
-                <button class="input-tab" onclick="switchTab('url')" id="tab-url">🔗 URL Source</button>
+                <button class="input-tab active" onclick="switchTab('text')" id="tab-text">📝 Text</button>
+                <button class="input-tab" onclick="switchTab('url')" id="tab-url">🔗 URL</button>
             </div>
 
-            <!-- Text Input -->
             <div class="input-group" id="text-input-group">
-                <label class="input-label">Source Text — the text you want to trace across platforms</label>
-                <textarea id="sourceText" placeholder="Paste the text you want to search for across the internet...&#10;&#10;e.g., 'I think AI will fundamentally change how we approach cybersecurity in the next decade'"></textarea>
+                <label class="input-label">Source text — trace this across 40+ platforms</label>
+                <textarea id="sourceText" placeholder="Paste the text you want to search for across the internet...&#10;&#10;TextTrace v2 finds exact copies, near-duplicates, and same-author rewrites"></textarea>
             </div>
 
-            <!-- URL Input -->
             <div class="input-group" id="url-input-group" style="display:none">
                 <label class="input-label">Source URL — extract text from a web page</label>
-                <input type="text" id="sourceUrl" placeholder="https://facebook.com/somepost  or  https://twitter.com/user/status/123">
+                <input type="text" id="sourceUrl" placeholder="https://facebook.com/somepost  or  https://x.com/user/status/123">
             </div>
 
-            <!-- Options -->
+            <!-- Core Options -->
             <div class="options-row">
                 <div class="option-item">
                     <label>Matching Tier</label>
                     <select id="tier">
                         <option value="all">All Tiers (recommended)</option>
-                        <option value="exact">Exact Only (hash match)</option>
-                        <option value="fuzzy">Fuzzy Only (near-duplicates)</option>
-                        <option value="stylometric">Stylometric (writing style)</option>
+                        <option value="exact">Exact Only (hash)</option>
+                        <option value="fuzzy">Fuzzy Only (near-dupes)</option>
+                        <option value="stylometric">Stylometric (authorship)</option>
                     </select>
                 </div>
                 <div class="option-item">
                     <label>Search Engines</label>
                     <select id="engines">
-                        <option value="duckduckgo,bing">DuckDuckGo + Bing</option>
-                        <option value="duckduckgo,bing,yandex">All Three (+ Yandex)</option>
-                        <option value="duckduckgo">DuckDuckGo Only</option>
+                        <option value="duckduckgo,bing">DDG + Bing</option>
+                        <option value="all">All Engines (+ Google, Yandex)</option>
+                        <option value="duckduckgo,bing,yandex">DDG + Bing + Yandex</option>
+                        <option value="duckduckgo,google">DDG + Google</option>
+                        <option value="duckduckgo">DDG Only</option>
                         <option value="bing">Bing Only</option>
-                        <option value="duckduckgo,yandex">DDG + Yandex</option>
                     </select>
                 </div>
                 <div class="option-item">
                     <label>Threshold: <span id="thresholdValue" style="color:var(--accent)">50</span>%</label>
-                    <input type="range" id="threshold" min="0" max="100" value="50" style="accent-color:var(--accent)" oninput="document.getElementById('thresholdValue').textContent=this.value">
+                    <input type="range" id="threshold" min="0" max="100" value="50" oninput="document.getElementById('thresholdValue').textContent=this.value">
                 </div>
                 <div class="option-item">
                     <label>Max Results / Engine</label>
@@ -596,52 +229,117 @@
                 </div>
             </div>
 
-            <div class="checkbox-group" onclick="document.getElementById('extractContent').click()">
-                <input type="checkbox" id="extractContent" checked>
-                <label style="cursor:pointer;font-size:13px;color:var(--text-dim)">Extract full page content (slower but more accurate — fetches & compares each result page)</label>
+            <!-- Site Filters -->
+            <div class="options-row">
+                <div class="option-item">
+                    <label>Site Filter (optional)</label>
+                    <input type="text" id="siteFilter" placeholder="e.g., twitter.com, reddit.com">
+                </div>
+                <div class="option-item">
+                    <label>Exclude Sites (optional)</label>
+                    <input type="text" id="excludeSites" placeholder="e.g., pinterest.com, facebook.com">
+                </div>
             </div>
 
-            <div style="margin-top:16px">
+            <!-- Coverage checkboxes -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+                <div class="checkbox-group" onclick="document.getElementById('checkArchives').click()">
+                    <input type="checkbox" id="checkArchives" checked>
+                    <label>🗄 Wayback + Cache + Archive.today</label>
+                </div>
+                <div class="checkbox-group" onclick="document.getElementById('checkPaste').click()">
+                    <input type="checkbox" id="checkPaste" checked>
+                    <label>📋 Paste sites (Pastebin, etc.)</label>
+                </div>
+                <div class="checkbox-group" onclick="document.getElementById('checkGoogle').click()">
+                    <input type="checkbox" id="checkGoogle" checked>
+                    <label>🔎 Google search</label>
+                </div>
+            </div>
+
+            <div class="checkbox-group" onclick="document.getElementById('extractContent').click()" style="margin-bottom:16px">
+                <input type="checkbox" id="extractContent" checked>
+                <label>Extract full page content (slower but more accurate — fetches & compares each result page)</label>
+            </div>
+
+            <!-- OPSEC Section -->
+            <div class="opsec-section">
+                <div class="opsec-title">🔒 OPSEC & Modes</div>
+                <div class="opsec-grid">
+                    <div class="checkbox-group" onclick="document.getElementById('modeTor').click()">
+                        <input type="checkbox" id="modeTor">
+                        <label>🔒 Tor (SOCKS5 :9050)</label>
+                    </div>
+                    <div class="checkbox-group" onclick="document.getElementById('modeStealth').click()">
+                        <input type="checkbox" id="modeStealth">
+                        <label>🤫 Stealth (max delays, snippet-only)</label>
+                    </div>
+                    <div class="checkbox-group" onclick="document.getElementById('modeAggressive').click()">
+                        <input type="checkbox" id="modeAggressive">
+                        <label>⚡ Aggressive (all engines, max results)</label>
+                    </div>
+                    <div class="input-group" style="margin:0">
+                        <label class="input-label">Custom Proxy</label>
+                        <input type="text" id="proxyUrl" placeholder="socks5://host:port  or  http://host:port">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chain mode -->
+            <div class="checkbox-group" onclick="document.getElementById('modeChain').click()" style="margin-bottom:8px">
+                <input type="checkbox" id="modeChain">
+                <label>🔗 Chain mode — follow top matches and re-trace them</label>
+            </div>
+            <div class="options-row" id="chainOptions" style="display:none;margin-bottom:16px">
+                <div class="option-item">
+                    <label>Chain Depth</label>
+                    <select id="chainDepth">
+                        <option value="1">1 (follow once)</option>
+                        <option value="2">2 (follow twice)</option>
+                        <option value="3">3 (deep chain)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-top:12px">
                 <button class="search-btn" id="searchBtn" onclick="startSearch()">
-                    <span>🔍 Start Trace</span>
+                    <span>🔍 Start Trace v2</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- ─── Progress Panel ─── -->
+    <!-- Progress Panel -->
     <div class="progress-panel" id="progressPanel">
         <div class="panel-header">
             <span>⚡ Live Progress</span>
             <span id="elapsedTime" style="margin-left:auto;font-size:12px;color:var(--text-muted)"></span>
         </div>
         <div class="progress-body" id="progressBody"></div>
-        <div class="progress-bar-container" style="margin:0 20px 20px">
-            <div class="progress-bar" id="progressBar"></div>
-        </div>
+        <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
     </div>
 
-    <!-- ─── Results ─── -->
+    <!-- Results -->
     <div class="results-panel" id="resultsPanel">
-        <!-- Stats -->
         <div class="stats-grid" id="statsGrid"></div>
-
-        <!-- Match Cards -->
+        <div id="identitySection"></div>
+        <div id="nextStepsSection"></div>
         <div class="results-header">
             <span class="results-title" id="resultsTitle">Matches</span>
             <div class="results-actions">
-                <button class="btn-sm" onclick="exportJSON()">📥 Export JSON</button>
+                <button class="btn-sm" onclick="exportJSON()">📥 JSON</button>
+                <button class="btn-sm" onclick="exportPDF()">📄 PDF</button>
                 <button class="btn-sm" onclick="loadHistory()">📋 History</button>
             </div>
         </div>
         <div id="matchList"></div>
     </div>
 
-    <!-- ─── History Panel ─── -->
+    <!-- History -->
     <div class="search-panel" id="historyPanel" style="display:none">
         <div class="panel-header">
             <span>📋 Search History</span>
-            <button class="btn-sm" onclick="document.getElementById('historyPanel').style.display='none'" style="margin-left:auto">✕ Close</button>
+            <button class="btn-sm" onclick="document.getElementById('historyPanel').style.display='none'" style="margin-left:auto">✕</button>
         </div>
         <div class="panel-body" id="historyList"></div>
     </div>
@@ -649,13 +347,11 @@
 </div>
 
 <script>
-// ─── State ────────────────────────────────────────────────────
 let currentTab = 'text';
 let currentReport = null;
 let searchStartTime = null;
 let progressTimer = null;
 
-// ─── Tab Switching ────────────────────────────────────────────
 function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.input-tab').forEach(t => t.classList.remove('active'));
@@ -664,7 +360,10 @@ function switchTab(tab) {
     document.getElementById('url-input-group').style.display = tab === 'url' ? 'block' : 'none';
 }
 
-// ─── Search ───────────────────────────────────────────────────
+document.getElementById('modeChain').addEventListener('change', function() {
+    document.getElementById('chainOptions').style.display = this.checked ? 'grid' : 'none';
+});
+
 function startSearch() {
     const text = document.getElementById('sourceText').value.trim();
     const url = document.getElementById('sourceUrl').value.trim();
@@ -673,36 +372,39 @@ function startSearch() {
     const engines = document.getElementById('engines').value;
     const maxResults = document.getElementById('maxResults').value;
     const extractContent = document.getElementById('extractContent').checked;
+    const site = document.getElementById('siteFilter').value.trim();
+    const exclude = document.getElementById('excludeSites').value.trim();
+    const tor = document.getElementById('modeTor').checked;
+    const stealth = document.getElementById('modeStealth').checked;
+    const aggressive = document.getElementById('modeAggressive').checked;
+    const proxy = document.getElementById('proxyUrl').value.trim();
+    const checkArchives = document.getElementById('checkArchives').checked;
+    const checkPaste = document.getElementById('checkPaste').checked;
+    const checkGoogle = document.getElementById('checkGoogle').checked;
+    const chain = document.getElementById('modeChain').checked;
+    const chainDepth = document.getElementById('chainDepth').value;
 
-    if (currentTab === 'text' && !text) {
-        alert('Please enter source text');
-        return;
-    }
-    if (currentTab === 'url' && !url) {
-        alert('Please enter a URL');
-        return;
-    }
+    if (currentTab === 'text' && !text) { alert('Enter source text'); return; }
+    if (currentTab === 'url' && !url) { alert('Enter a URL'); return; }
 
     const payload = {
         text: currentTab === 'text' ? text : '',
         url: currentTab === 'url' ? url : '',
         threshold: parseFloat(threshold),
-        tier: tier,
-        engines: engines,
-        max_results: parseInt(maxResults),
-        extract_content: extractContent,
+        tier, engines, max_results: parseInt(maxResults), extract_content: extractContent,
+        site, exclude, tor, stealth, aggressive, proxy,
+        check_archives: checkArchives, check_paste: checkPaste, check_google: checkGoogle,
+        chain, chain_depth: parseInt(chainDepth),
     };
 
-    // UI state
     document.getElementById('searchBtn').disabled = true;
-    document.getElementById('searchBtn').innerHTML = '<span>⏳ Searching...</span>';
+    document.getElementById('searchBtn').innerHTML = '<span>⏳ Tracing...</span>';
     document.getElementById('statusDot').classList.add('searching');
     document.getElementById('statusText').textContent = 'Searching...';
     document.getElementById('progressPanel').classList.add('active');
     document.getElementById('resultsPanel').classList.remove('active');
     document.getElementById('progressBody').innerHTML = '';
     document.getElementById('progressBar').style.width = '0%';
-
     searchStartTime = Date.now();
     updateElapsed();
 
@@ -713,71 +415,45 @@ function startSearch() {
     })
     .then(r => r.json())
     .then(data => {
-        if (data.error) {
-            addProgressLine('error', data.error);
-            resetSearchUI();
-            return;
-        }
+        if (data.error) { addProgressLine('error', data.error); resetSearchUI(); return; }
         streamProgress(data.session_id);
     })
-    .catch(err => {
-        addProgressLine('error', 'Request failed: ' + err.message);
-        resetSearchUI();
-    });
+    .catch(err => { addProgressLine('error', 'Request failed: ' + err.message); resetSearchUI(); });
 }
 
-// ─── SSE Progress Stream ──────────────────────────────────────
 function streamProgress(sessionId) {
     const evtSource = new EventSource(`/api/progress/${sessionId}`);
-
     evtSource.onmessage = function(event) {
         const msg = JSON.parse(event.data);
-
-        switch(msg.type) {
-            case 'extract':
-            case 'source':
-            case 'fingerprint':
-            case 'queries':
-            case 'searching':
-            case 'results':
-            case 'fetching':
-            case 'matching':
-                addProgressLine('info', msg.message);
-                updateProgressBar(msg);
-                break;
-            case 'warning':
-                addProgressLine('warning', msg.message);
-                break;
-            case 'keepalive':
-                break;
-            case 'complete':
-                currentReport = msg.report;
-                displayResults(msg.report);
-                addProgressLine('success', `✓ Search complete in ${msg.report.metadata.elapsed_seconds}s — ${msg.report.stats.matches_found} matches found`);
-                evtSource.close();
-                resetSearchUI();
-                break;
-            case 'error':
-                addProgressLine('error', msg.message);
-                evtSource.close();
-                resetSearchUI();
-                break;
+        const typeMap = {
+            extract: 'info', source: 'info', fingerprint: 'info', queries: 'info',
+            searching: 'info', results: 'info', fetching: 'info', matching: 'info',
+            cache: 'info', opsec: 'opsec', chain: 'chain',
+            warning: 'warning', error: 'error', complete: 'success', keepalive: null,
+        };
+        const type = typeMap[msg.type] || null;
+        if (type) {
+            addProgressLine(type, msg.message);
+            updateProgressBar(msg);
         }
+        if (msg.type === 'complete') {
+            currentReport = msg.report;
+            displayResults(msg.report);
+            addProgressLine('success', `✓ Complete in ${msg.report.metadata.elapsed_seconds}s — ${msg.report.stats.matches_found} matches`);
+            evtSource.close();
+            resetSearchUI();
+        }
+        if (msg.type === 'error') { addProgressLine('error', msg.message); evtSource.close(); resetSearchUI(); }
     };
-
-    evtSource.onerror = function() {
-        evtSource.close();
-    };
+    evtSource.onerror = function() { evtSource.close(); };
 }
 
-// ─── Progress UI ──────────────────────────────────────────────
 function addProgressLine(type, message) {
     const body = document.getElementById('progressBody');
     const line = document.createElement('div');
-    line.className = 'progress-line ' + (type === 'warning' ? 'warning' : type === 'error' ? 'error' : type === 'success' ? 'success' : '');
-
-    const icons = { info: '▸', warning: '⚠', error: '✗', success: '✓' };
-    line.innerHTML = `<span class="icon">${icons[type] || '▸'}</span><span>${escapeHtml(message)}</span>`;
+    line.className = 'progress-line ' + type;
+    const icons = { info: '▸', warning: '⚠', error: '✗', success: '✓', opsec: '🔒', chain: '🔗' };
+    line.innerHTML = `<span class="icon">${icons[type]||'▸'}</span><span>${escapeHtml(message)}</span>`;
     body.appendChild(line);
     body.scrollTop = body.scrollHeight;
 }
@@ -785,15 +461,10 @@ function addProgressLine(type, message) {
 function updateProgressBar(msg) {
     const bar = document.getElementById('progressBar');
     let pct = 0;
-    if (msg.type === 'extract') pct = 5;
-    else if (msg.type === 'source') pct = 10;
-    else if (msg.type === 'fingerprint') pct = 12;
-    else if (msg.type === 'queries') pct = 15;
-    else if (msg.type === 'searching') pct = 30;
-    else if (msg.type === 'results') pct = 50;
-    else if (msg.type === 'fetching') pct = 50 + (msg.current / msg.total) * 35;
-    else if (msg.type === 'matching') pct = 90;
-
+    if (msg.type==='extract') pct=5; else if (msg.type==='source') pct=10; else if (msg.type==='fingerprint') pct=12;
+    else if (msg.type==='queries') pct=15; else if (msg.type==='searching') pct=25; else if (msg.type==='results') pct=40;
+    else if (msg.type==='fetching') pct=40+(msg.current/msg.total)*30; else if (msg.type==='matching') pct=85;
+    else if (msg.type==='chain') pct=90;
     bar.style.width = pct + '%';
 }
 
@@ -807,183 +478,201 @@ function updateElapsed() {
 function resetSearchUI() {
     clearTimeout(progressTimer);
     document.getElementById('searchBtn').disabled = false;
-    document.getElementById('searchBtn').innerHTML = '<span>🔍 Start Trace</span>';
+    document.getElementById('searchBtn').innerHTML = '<span>🔍 Start Trace v2</span>';
     document.getElementById('statusDot').classList.remove('searching');
     document.getElementById('statusText').textContent = 'Ready';
     document.getElementById('progressBar').style.width = '100%';
 }
 
-// ─── Results Display ──────────────────────────────────────────
 function displayResults(report) {
     document.getElementById('resultsPanel').classList.add('active');
     document.getElementById('progressPanel').classList.remove('active');
-
     const meta = report.metadata;
     const stats = report.stats;
     const matches = report.matches;
-
-    // Stats
+    const idGraph = report.identity_graph || {};
+    const confLevels = stats.confidence_levels || {};
     const platforms = stats.platforms_matched || [];
-    const tiers = stats.match_tiers || {};
 
     document.getElementById('statsGrid').innerHTML = `
-        <div class="stat-card">
-            <div class="stat-value">${stats.matches_found}</div>
-            <div class="stat-label">Matches Found</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">${stats.results_scanned}</div>
-            <div class="stat-label">Results Scanned</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">${platforms.length}</div>
-            <div class="stat-label">Platforms Hit</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">${meta.elapsed_seconds}s</div>
-            <div class="stat-label">Elapsed Time</div>
-        </div>
+        <div class="stat-card"><div class="stat-value">${stats.matches_found}</div><div class="stat-label">Matches</div></div>
+        <div class="stat-card"><div class="stat-value">${stats.results_scanned}</div><div class="stat-label">Scanned</div></div>
+        <div class="stat-card"><div class="stat-value">${platforms.length}</div><div class="stat-label">Platforms</div></div>
+        <div class="stat-card"><div class="stat-value">${meta.elapsed_seconds}s</div><div class="stat-label">Time</div></div>
+        <div class="stat-card"><div class="stat-value">${confLevels.HIGH||0}</div><div class="stat-label">🟢 High</div></div>
+        <div class="stat-card"><div class="stat-value">${confLevels.MEDIUM||0}</div><div class="stat-label">🟡 Medium</div></div>
+        <div class="stat-card"><div class="stat-value">${confLevels.LOW||0}</div><div class="stat-label">🟠 Low</div></div>
+        <div class="stat-card"><div class="stat-value">${confLevels.UNVERIFIED||0}</div><div class="stat-label">⚪ Unverified</div></div>
     `;
 
-    // Title
+    // Identity graph
+    const idSection = document.getElementById('identitySection');
+    if (idGraph.links && idGraph.links.length > 0) {
+        idSection.innerHTML = `<div class="identity-section">
+            <div class="identity-title">🔗 Identity Links — Potential Same-Author Connections</div>
+            ${idGraph.links.map(l => `<div class="identity-link">
+                <span class="platform-badge">${l.platform_a}</span>
+                <span class="arrow">↔</span>
+                <span class="platform-badge">${l.platform_b}</span>
+                <span style="color:var(--purple)">shared: ${l.shared_entities.join(', ')}</span>
+            </div>`).join('')}
+        </div>`;
+    } else { idSection.innerHTML = ''; }
+
+    // Next steps
+    const nsSection = document.getElementById('nextStepsSection');
+    const nextSteps = report.next_steps || [];
+    if (nextSteps.length > 0) {
+        nsSection.innerHTML = `<div class="next-steps">
+            <div class="next-steps-title">📋 Recommended Next Steps</div>
+            ${nextSteps.map(s => `<div class="next-step">${s}</div>`).join('')}
+        </div>`;
+    } else { nsSection.innerHTML = ''; }
+
     document.getElementById('resultsTitle').textContent = `Matches (${matches.length})`;
 
-    // Match cards
     const list = document.getElementById('matchList');
-
     if (matches.length === 0) {
-        list.innerHTML = `
-            <div class="no-results">
-                <div class="no-results-icon">🔍</div>
-                <div>No matches found above ${meta.threshold}% threshold</div>
-                <div style="margin-top:8px;font-size:13px">Try lowering the threshold or using more search engines</div>
-            </div>
-        `;
+        list.innerHTML = `<div class="no-results"><div class="no-results-icon">🔍</div><div>No matches above ${meta.threshold}%</div><div style="margin-top:6px;font-size:12px">Lower threshold, add engines, or try --chain mode</div></div>`;
         return;
     }
 
     list.innerHTML = matches.map((m, i) => {
         const scoreClass = m.max_score >= 80 ? 'score-high' : m.max_score >= 60 ? 'score-mid' : 'score-low';
-        const tierClass = m.match_tier && m.match_tier.startsWith('exact') ? 'tier-exact' :
-                          m.match_tier && m.match_tier.startsWith('fuzzy') ? 'tier-fuzzy' : 'tier-stylometric';
-        const tierLabel = m.match_tier || 'unknown';
+        const tierClass = (m.match_tier||'').includes('exact') ? 'tier-exact' : (m.match_tier||'').includes('fuzzy') ? 'tier-fuzzy' : 'tier-stylometric';
+        const confClass = 'conf-' + (m.confidence||'unverified').toLowerCase();
+        const confLabel = m.confidence || 'UNVERIFIED';
 
-        // Score breakdown
         let scoreRows = '';
         for (const [name, val] of Object.entries(m.scores)) {
+            if (name.startsWith('_')) continue;
             if (typeof val === 'object') {
                 for (const [k, v] of Object.entries(val)) {
-                    scoreRows += `<tr><td>${name}.${k}</td><td>${typeof v === 'number' ? v.toFixed(1) : v}</td></tr>`;
+                    if (k.startsWith('_')) continue;
+                    scoreRows += `<tr><td>${name}.${k}</td><td>${typeof v==='number'?v.toFixed(1):v}</td></tr>`;
                 }
             } else {
                 scoreRows += `<tr><td>${name}</td><td>${val.toFixed(1)}</td></tr>`;
             }
         }
 
-        return `
-            <div class="match-card" onclick="this.classList.toggle('expanded')">
-                <div class="match-header">
-                    <div class="match-left">
-                        <span class="platform-badge">${m.platform}</span>
-                        <span class="tier-badge ${tierClass}">${tierLabel}</span>
-                        <span style="font-size:11px;color:var(--text-muted)">${m.engine}</span>
-                    </div>
-                    <div class="match-score" style="color:var(--${m.max_score >= 80 ? 'green' : m.max_score >= 60 ? 'yellow' : 'orange'})">${m.max_score.toFixed(1)}%</div>
+        // Entity tags
+        let entityHtml = '';
+        const ents = m.entities || {};
+        const entityList = [...(ents.emails||[]), ...(ents.usernames||[]), ...(ents.phones||[])].slice(0, 8);
+        if (entityList.length > 0) {
+            entityHtml = `<div class="entity-list">${entityList.map(e => `<span class="entity-tag">${escapeHtml(e)}</span>`).join('')}</div>`;
+        }
+        if (m.entity_overlap > 0) {
+            entityHtml += `<div style="font-size:11px;color:var(--purple)">Entity overlap: ${m.entity_overlap.toFixed(1)}%</div>`;
+        }
+
+        // Diff
+        let diffHtml = '';
+        if (m.diff && m.diff.length > 0) {
+            diffHtml = `<div style="margin-top:8px;font-size:11px;color:var(--text-dim)">Diff:</div>
+            <div class="diff-container">${m.diff.map(d => {
+                const cls = d.type === 'removed' ? 'diff-removed' : d.type === 'added' ? 'diff-added' : 'diff-equal';
+                const prefix = d.type === 'removed' ? '−' : d.type === 'added' ? '+' : ' ';
+                return `<span class="${cls}">${prefix} ${escapeHtml(d.text)}</span> `;
+            }).join('')}</div>`;
+        }
+
+        return `<div class="match-card" onclick="this.classList.toggle('expanded')">
+            <div class="match-header">
+                <div class="match-left">
+                    <span class="platform-badge">${m.platform}</span>
+                    <span class="tier-badge ${tierClass}">${m.match_tier||'unknown'}</span>
+                    <span class="confidence-badge ${confClass}">${confLabel}</span>
+                    <span style="font-size:10px;color:var(--text-muted)">${m.engine}</span>
                 </div>
-                <div class="score-bar-container">
-                    <div class="score-bar ${scoreClass}" style="width:${m.max_score}%"></div>
-                </div>
-                <div class="match-title">${escapeHtml(m.title)}</div>
-                <a href="${m.url}" target="_blank" class="match-url" onclick="event.stopPropagation()">${escapeHtml(m.url)}</a>
-                <div class="match-details">
-                    <table class="score-table">
-                        <tr><td>URL</td><td><a href="${m.url}" target="_blank" class="match-url">${escapeHtml(m.url)}</a></td></tr>
-                        <tr><td>Title</td><td>${escapeHtml(m.title)}</td></tr>
-                        <tr><td>Platform</td><td>${m.platform}</td></tr>
-                        <tr><td>Engine</td><td>${m.engine}</td></tr>
-                        <tr><td>Match Tier</td><td>${tierLabel}</td></tr>
-                        <tr><td>Max Score</td><td>${m.max_score.toFixed(1)}%</td></tr>
-                        ${scoreRows}
-                    </table>
-                </div>
+                <div class="match-score" style="color:var(--${m.max_score>=80?'green':m.max_score>=60?'yellow':'orange'})">${m.max_score.toFixed(1)}%</div>
             </div>
-        `;
+            <div class="score-bar-container"><div class="score-bar ${scoreClass}" style="width:${m.max_score}%"></div></div>
+            <div class="match-title">${escapeHtml(m.title)}</div>
+            <a href="${m.url}" target="_blank" class="match-url" onclick="event.stopPropagation()">${escapeHtml(m.url)}</a>
+            ${entityHtml}
+            <div class="match-details">
+                <table class="score-table">
+                    <tr><td>URL</td><td><a href="${m.url}" target="_blank" class="match-url">${escapeHtml(m.url)}</a></td></tr>
+                    <tr><td>Platform</td><td>${m.platform}</td></tr>
+                    <tr><td>Confidence</td><td>${confLabel}</td></tr>
+                    <tr><td>Entity Overlap</td><td>${(m.entity_overlap||0).toFixed(1)}%</td></tr>
+                    ${scoreRows}
+                </table>
+                ${diffHtml}
+            </div>
+        </div>`;
     }).join('');
 }
 
-// ─── Export ───────────────────────────────────────────────────
 function exportJSON() {
     if (!currentReport) return;
     const blob = new Blob([JSON.stringify(currentReport, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `texttrace-report-${Date.now()}.json`;
-    a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `texttrace-v2-${Date.now()}.json`; a.click();
     URL.revokeObjectURL(url);
 }
 
-// ─── History ──────────────────────────────────────────────────
+function exportPDF() {
+    if (!currentReport) return;
+    alert('PDF export: use the CLI with --pdf flag, or download from history (/api/history/<id>/pdf)');
+}
+
 function loadHistory() {
-    fetch('/api/history')
-    .then(r => r.json())
-    .then(data => {
+    fetch('/api/history').then(r => r.json()).then(data => {
         const panel = document.getElementById('historyPanel');
         const list = document.getElementById('historyList');
         panel.style.display = 'block';
-
-        if (data.history.length === 0) {
-            list.innerHTML = '<div class="no-results"><div class="no-results-icon">📋</div>No search history yet</div>';
-            return;
-        }
-
-        list.innerHTML = data.history.map(h => `
-            <div class="history-item" onclick="loadHistoryDetail('${h.id}')">
+        if (data.history.length === 0) { list.innerHTML = '<div class="no-results"><div class="no-results-icon">📋</div>No history</div>'; return; }
+        list.innerHTML = data.history.map(h => {
+            const conf = h.confidence || {};
+            return `<div class="history-item" onclick="loadHistoryDetail('${h.id}')">
                 <div class="history-left">
                     <div class="history-preview">${escapeHtml(h.source_preview)}</div>
                     <div class="history-meta">
                         <span>🕐 ${new Date(h.timestamp).toLocaleString()}</span>
                         <span>⏱ ${h.elapsed}s</span>
                         <span>📊 ${h.results_scanned} scanned</span>
-                        ${h.platforms.length > 0 ? `<span>🌐 ${h.platforms.join(', ')}</span>` : ''}
+                        ${h.identity_links > 0 ? `<span>🔗 ${h.identity_links} links</span>` : ''}
+                        <span>🟢${conf.HIGH||0} 🟡${conf.MEDIUM||0} 🟠${conf.LOW||0}</span>
                     </div>
                 </div>
                 <div class="history-right">
                     <span class="history-count">${h.matches}</span>
-                    <span style="font-size:11px;color:var(--text-muted)">matches</span>
+                    <span style="font-size:10px;color:var(--text-muted)">matches</span>
                 </div>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
     });
 }
 
 function loadHistoryDetail(id) {
-    fetch(`/api/history/${id}`)
-    .then(r => r.json())
-    .then(report => {
+    fetch(`/api/history/${id}`).then(r => r.json()).then(report => {
         currentReport = report;
         displayResults(report);
         document.getElementById('historyPanel').style.display = 'none';
     });
 }
 
-// ─── Utils ────────────────────────────────────────────────────
 function escapeHtml(text) {
     if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    const div = document.createElement('div'); div.textContent = text; return div.innerHTML;
 }
 
-// ─── Init ─────────────────────────────────────────────────────
-// Check health on load
+// Init: check health
 fetch('/api/health').then(r => r.json()).then(data => {
+    document.querySelector('.header-tag').textContent = `v2 OSINT · ${data.platforms} platforms`;
     if (!data.rapidfuzz) {
-        addProgressLine('warning', '⚠ rapidfuzz not installed — fuzzy matching disabled. Run: pip install rapidfuzz');
+        addProgressLine('warning', '⚠ rapidfuzz not installed — fuzzy matching disabled');
         document.getElementById('progressPanel').classList.add('active');
     }
+    if (!data.curl_cffi) {
+        addProgressLine('warning', '⚠ curl_cffi not installed — Google search uses basic httpx (may get blocked)');
+        document.getElementById('progressPanel').classList.add('active');
+    }
+    if (data.fpdf) document.querySelector('.header-tag').textContent += ' · PDF ✓';
 });
 </script>
-
 </body>
 </html>

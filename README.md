@@ -1,8 +1,10 @@
-# 🔍 TextTrace — Cross-Platform Text Attribution OSINT Tool
+# 🔍 TextTrace v2 — Cross-Platform Text Attribution OSINT Tool
 
-**Find the same text posted across different platforms.**
+**Find the same text — or the same author — across 42+ platforms.**
 
-Give it text from a Facebook post → it finds the same text on X (Twitter), Reddit, forums, blogs, and 30+ other platforms using three-tier matching.
+Give it text from a Facebook post → it finds the same text on X (Twitter), Reddit, forums, blogs, paste sites, archived pages, and 40+ other platforms using three-tier matching with confidence scoring.
+
+**v2 is a complete rewrite** with async parallel search, OPSEC hardening (Tor/proxy/stealth), extended stylometric authorship attribution, Google search via curl_cffi, archive coverage (Wayback/Cache/Archive.today), batch/chain/watch operational modes, entity extraction, diff view, PDF reports, and a full web dashboard.
 
 ---
 
@@ -12,31 +14,48 @@ Give it text from a Facebook post → it finds the same text on X (Twitter), Red
 Source Text (e.g., Facebook post)
     │
     ▼
-┌─────────────────────────────────────┐
-│  SEARCH ENGINES                     │
-│  DuckDuckGo · Bing · Yandex        │
-│  - Exact phrase queries             │
-│  - Proper noun combinations         │
-│  - Content word groups              │
-└──────────────┬──────────────────────┘
+┌─────────────────────────────────────────────┐
+│  SEARCH ENGINES (async parallel)             │
+│  DuckDuckGo · Bing · Yandex · Google        │
+│  + Wayback CDX · Google Cache · Archive.today│
+│  + Paste sites (Pastebin, Paste.ee)          │
+│  - Exact phrase queries                      │
+│  - Proper noun combinations                  │
+│  - Site operators (--site twitter.com)       │
+│  - 50+ rotating user agents                  │
+│  - curl_cffi stealth TLS fingerprints        │
+└──────────────┬──────────────────────────────┘
                │
                ▼
-┌─────────────────────────────────────┐
-│  THREE-TIER CONTENT MATCHING        │
-│                                     │
-│  Tier 1: EXACT — SHA-256 hash      │
-│  → Identical copy-paste             │
-│                                     │
-│  Tier 2: FUZZY — rapidfuzz          │
-│  → Near-duplicates, typos, edits    │
-│                                     │
-│  Tier 3: STYLOMETRIC — N-gram       │
-│  → Same author, different wording   │
-└──────────────┬──────────────────────┘
+┌─────────────────────────────────────────────┐
+│  FIVE-TIER CONTENT MATCHING                  │
+│                                              │
+│  Tier 1: EXACT — SHA-256 hash              │
+│  → Identical copy-paste                      │
+│                                              │
+│  Tier 2: FUZZY — rapidfuzz                  │
+│  → Near-duplicates, typos, edits            │
+│                                              │
+│  Tier 2b: PARTIAL — sliding window          │
+│  → Snippet embedded in full page             │
+│                                              │
+│  Tier 3: EXTENDED STYLOMETRIC               │
+│  → Vocabulary richness (TTR, Yule's K)      │
+│  → Punctuation fingerprint                  │
+│  → Sentence length distribution              │
+│  → N-gram cosine similarity                 │
+│  → TF-IDF cosine (with sklearn)             │
+│  → Same author, different wording            │
+│                                              │
+│  Tier 4: ENTITY OVERLAP                     │
+│  → Shared emails, usernames, phones, IPs    │
+│  → Strong same-author signal                │
+└──────────────┬──────────────────────────────┘
                │
                ▼
-  Matches + scores + platform detection
-  (X/Twitter, Facebook, Reddit, Telegram, etc.)
+  Matches + confidence scores + platform detection
+  + identity graph + entity extraction + diff view
+  (X/Twitter, Facebook, Reddit, Telegram, Pastebin, etc.)
 ```
 
 ---
@@ -46,54 +65,77 @@ Source Text (e.g., Facebook post)
 ### Install dependencies
 
 ```bash
-pip install httpx beautifulsoup4 rapidfuzz
+pip install httpx beautifulsoup4 rapidfuzz fpdf2 curl-cffi
 
-# Optional: for advanced stylometric matching
+# Optional: for advanced TF-IDF stylometric matching
 pip install scikit-learn
 ```
 
 ### Run
 
 ```bash
-# Search for exact text across the internet
+# Basic search
 python texttrace.py --text "Your text here"
 
 # Extract text from a URL then search
 python texttrace.py --url https://facebook.com/somepost
 
-# All engines, broad search
-python texttrace.py --text "some text" --engines duckduckgo,bing,yandex --threshold 40
+# All engines (DDG + Bing + Yandex + Google)
+python texttrace.py --text "some text" --engines all
 
-# Fuzzy-only matching
-python texttrace.py --text "some text" --tier fuzzy --threshold 70
+# Route through Tor for OPSEC
+python texttrace.py --text "some text" --tor
+
+# Stealth mode (max OPSEC — snippet-only, no page fetching)
+python texttrace.py --text "some text" --stealth
+
+# Aggressive mode (all engines, max results, deep crawl)
+python texttrace.py --text "some text" --aggressive
+
+# Search only on Twitter/X
+python texttrace.py --text "some text" --site twitter.com
+
+# Chain mode — follow top matches and re-trace them
+python texttrace.py --text "some text" --chain --depth 2
+
+# Batch mode — process multiple texts from file
+python texttrace.py --batch targets.txt --output results/
+
+# Watch mode — re-run every 2 hours
+python texttrace.py --text "some text" --watch --interval 7200
+
+# Generate PDF report
+python texttrace.py --text "some text" --pdf report.pdf
 
 # JSON output for scripting
 python texttrace.py --text "some text" --json > results.json
-
-# Save report to file
-python texttrace.py --text "some text" --output report.json
 ```
 
 ---
 
-## 🛠️ Options
+## 🛡️ OPSEC Modes
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--text`, `-t` | — | Source text to search for |
-| `--url`, `-u` | — | URL to extract source text from |
-| `--threshold` | `50` | Minimum match score (0-100) |
-| `--tier` | `all` | Matching tier: `exact`, `fuzzy`, `stylometric`, `all` |
-| `--engines` | `duckduckgo,bing` | Comma-separated search engines |
-| `--max-results` | `15` | Max results per engine |
-| `--no-extract` | off | Skip full-page content extraction (faster but less accurate) |
-| `--json` | off | Output results as JSON |
-| `--output`, `-o` | — | Save report to file |
-| `--verbose`, `-v` | off | Verbose output |
+TextTrace v2 is red-team hardened. Three OPSEC modes for different threat models:
+
+| Mode | Flag | Behavior |
+|------|------|----------|
+| **Normal** | _(default)_ | Standard search, extracts full page content for comparison |
+| **Stealth** | `--stealth` | Maximum OPSEC — snippet-only matching, no page fetching, long delays between requests, limited concurrency |
+| **Aggressive** | `--aggressive` | All engines, max results, deep crawl — use when speed matters more than OPSEC |
+| **Tor** | `--tor` | Routes ALL traffic through Tor SOCKS5 proxy (127.0.0.1:9050) |
+| **Custom Proxy** | `--proxy socks5://host:port` | Route through any SOCKS5/HTTP proxy |
+
+### Anti-Detection Features
+
+- **50+ rotating User-Agent strings** — real browser UAs from Chrome, Firefox, Safari, Edge, Opera, Vivaldi
+- **curl_cffi TLS fingerprints** — realistic browser TLS handshakes (avoids bot detection on DDG, Bing, Google)
+- **Exponential backoff** on rate limits (202/429) — auto-retries with increasing wait times
+- **Per-request header randomization** — Accept-Language, Cache-Control, etc.
+- **Concurrent search with semaphore** — up to 5 parallel requests (2 in stealth mode)
 
 ---
 
-## 🔬 Matching Tiers Explained
+## 🧠 Matching Tiers Explained
 
 ### Tier 1: Exact (Hash Match)
 SHA-256 of normalized text. Catches **identical copies** — same words, same order. No false positives.
@@ -105,80 +147,97 @@ Uses [rapidfuzz](https://github.com/maxbachmann/rapidfuzz) with four metrics:
 - **Token Sort Ratio** — word-order independent
 - **Token Set Ratio** — handles extra/missing words
 
-Great for catching near-duplicates where someone changed a few words.
+Plus **sliding-window partial matching** — finds the best-matching substring in a full page against your source text. Much more accurate than comparing full-page to full-page.
 
-### Tier 3: Stylometric (Writing Style)
-Even if the text is completely rewritten, the **writing style** can match:
-- Bigram/trigram cosine similarity
-- TF-IDF cosine similarity (if scikit-learn installed)
-- Captures sentence structure, word choice patterns
+### Tier 3: Extended Stylometric (Writing Style)
+**New in v2** — even if the text is completely rewritten, the writing style can match:
+
+| Feature | What It Measures |
+|---------|-----------------|
+| **Vocabulary richness** | Type-Token Ratio, Hapax Legomena, Yule's K — how diverse is the vocabulary? |
+| **Punctuation fingerprint** | Usage patterns of .,;:!?()- — very distinctive per author |
+| **Sentence length stats** | Mean, std dev, min, max, median — captures writing rhythm |
+| **N-gram cosine** | Bigram/trigram overlap — captures phrase patterns |
+| **TF-IDF cosine** | (with sklearn) Weighted term importance comparison |
 
 Best for linking **same author, different wording**.
 
+### Tier 4: Entity Overlap
+Extracts named entities (emails, phones, IPs, usernames, hashtags, capitalized sequences) from both source and match text. Overlapping entities = strong same-author signal.
+
+### Confidence Scoring
+
+Every match gets a confidence level:
+
+| Level | Badge | Criteria |
+|-------|-------|----------|
+| **HIGH** | 🟢 | Exact hash match |
+| **MEDIUM** | 🟡 | Score ≥ 75% |
+| **LOW** | 🟠 | Score ≥ 50% |
+| **UNVERIFIED** | ⚪ | Score < 50% |
+
 ---
 
-## 🌐 Platform Detection
+## 🌐 Platform Detection (42+ Platforms)
 
-Automatically identifies 30+ platforms from result URLs:
+Automatically identifies platforms from result URLs:
 
 | Category | Platforms |
 |----------|-----------|
-| **Social Media** | X/Twitter, Facebook, Instagram, Reddit, LinkedIn, TikTok, Threads, Snapchat, Pinterest, Tumblr |
+| **Social Media** | X/Twitter, Facebook, Instagram, Reddit, LinkedIn, TikTok, Threads, Snapchat, Pinterest, Tumblr, Bluesky, Kick |
 | **Messaging** | Telegram, Discord, WhatsApp |
-| **Video** | YouTube |
-| **News/Blog** | Medium, Substack, Quora |
-| **Alt Social** | Truth Social, Parler, Gab, Mastodon |
-| **Dev/Tech** | GitHub, Pastebin |
+| **Video** | YouTube, Rumble |
+| **News/Blog** | Medium, Substack, Quora, Patreon |
+| **Alt Social** | Truth Social, Parler, Gab, Mastodon, Nostr, GETTR, Stacker News |
+| **Dev/Tech** | GitHub |
+| **Paste Sites** | Pastebin, Paste.ee, Ghostbin, JustPaste.it |
 | **Forums** | 4chan, 8kun |
 | **Gaming** | Steam |
-| **Regional** | VK (VKontakte), Weibo |
+| **Regional** | VK (VKontakte), Weibo, Xiaohongshu |
+| **Creative** | DeviantArt, AO3, FanFiction.net |
 
 ---
 
-## 📋 Real-World OSINT Use Cases
+## 🔧 All Options
 
-| Use Case | Example |
-|----------|---------|
-| **Cross-posting detection** | Same person posting identical content across platforms under different identities |
-| **Content theft/plagiarism** | Someone copied your post verbatim |
-| **Misinformation tracking** | Same narrative appearing on multiple platforms simultaneously |
-| **Dual-identity linking** | Matching writing style to connect anonymous accounts |
-| **Brand monitoring** | Where is your content being reshared? |
-| **Influence operation detection** | Coordinated messaging across platforms |
-
----
-
-## 🔑 No API Keys Required
-
-TextTrace uses **only free, no-auth methods**:
-
-- **DuckDuckGo** — HTML search scraping
-- **Bing** — search result parsing
-- **Yandex** — search result parsing
-- **BeautifulSoup** — web content extraction
-
-No paid APIs. No rate-limited free tiers. No sign-ups.
-
----
-
-## ⚠️ Limitations
-
-- Rate-limited by search engines (3-4s delay between queries)
-- Cannot access private/locked social media posts
-- DDG may temporarily rate-limit (202 response) on excessive queries
-- Stylometric matching needs 50+ words to be reliable
-- Content extraction depends on page being publicly accessible
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--text`, `-t` | — | Source text to search for |
+| `--url`, `-u` | — | URL to extract source text from |
+| `--batch` | — | File with one text per line for batch mode |
+| `--threshold` | `50` | Minimum match score (0-100) |
+| `--tier` | `all` | Matching tier: `exact`, `fuzzy`, `stylometric`, `all` |
+| `--engines` | `duckduckgo,bing` | Comma-separated engines or `all` |
+| `--max-results` | `15` | Max results per engine |
+| `--no-extract` | off | Skip full-page content extraction |
+| `--site` | — | Only search this platform (e.g., `twitter.com`) |
+| `--exclude` | — | Exclude sites (comma-separated) |
+| `--tor` | off | Route through Tor SOCKS5 proxy (:9050) |
+| `--proxy` | — | Custom proxy URL (socks5/http) |
+| `--stealth` | off | Stealth mode: max delays, snippet-only |
+| `--aggressive` | off | Aggressive mode: all engines, max results |
+| `--no-archives` | off | Skip archive checks (Wayback, Cache, Archive.today) |
+| `--no-paste` | off | Skip paste site checks |
+| `--no-google` | off | Skip Google search |
+| `--chain` | off | Chain mode: follow top matches recursively |
+| `--depth` | `1` | Chain depth (1-3) |
+| `--watch` | off | Watch mode: re-run periodically |
+| `--interval` | `3600` | Watch interval in seconds |
+| `--json` | off | Output as JSON |
+| `--output`, `-o` | — | Save report to file |
+| `--pdf` | — | Generate PDF report |
+| `--verbose`, `-v` | off | Verbose output |
 
 ---
 
 ## 🖥️ Web Dashboard
 
-TextTrace includes a **local web dashboard** — a modern, dark-themed OSINT UI that runs in your browser. No more CLI arguments — just open the dashboard, paste your text, and watch results stream in real-time.
+TextTrace includes a **local web dashboard** — a modern, dark-themed OSINT UI with real-time streaming, confidence badges, entity tags, diff view, and identity graph visualization.
 
 ### Quick Start
 
 ```bash
-# Install dashboard dependencies (includes Flask + texttrace deps)
+# Install dashboard dependencies
 pip install -r dashboard-requirements.txt
 
 # Launch the dashboard
@@ -193,23 +252,32 @@ python app.py
 |---------|-------------|
 | **Text / URL Input** | Paste source text or provide a URL to extract from |
 | **Tier Selection** | Choose exact, fuzzy, stylometric, or all matching tiers |
-| **Engine Selection** | Pick which search engines to use (DDG, Bing, Yandex) |
+| **Engine Selection** | Pick which search engines to use (DDG, Bing, Yandex, Google, all) |
 | **Threshold Slider** | Adjust match sensitivity from 0-100% |
-| **Live Progress** | Real-time SSE streaming of search progress (queries, engine status, page fetching) |
-| **Stats Dashboard** | At-a-glance stats: matches found, results scanned, platforms hit, elapsed time |
-| **Match Cards** | Expandable cards with platform badges, tier indicators, score bars, and full score breakdowns |
-| **Search History** | All past searches saved locally — click to reload any previous report |
-| **JSON Export** | Download any report as JSON with one click |
+| **OPSEC Panel** | Toggle Tor, stealth, aggressive modes; set custom proxy |
+| **Site Filters** | Target specific platforms or exclude noise |
+| **Chain Mode** | Multi-hop attribution from the dashboard |
+| **Archive/Paste Toggles** | Enable/disable Wayback, Cache, paste site checks |
+| **Live Progress (SSE)** | Real-time streaming of search progress with progress bar |
+| **Confidence Badges** | 🟢 HIGH / 🟡 MEDIUM / 🟠 LOW / ⚪ UNVERIFIED |
+| **Entity Tags** | Extracted emails, usernames, phones shown as tags |
+| **Diff View** | Word-level diff between source and match (red/green) |
+| **Identity Graph** | Cross-platform same-author connection links |
+| **Next Steps** | Auto-generated OSINT recommendations based on results |
+| **Stats Dashboard** | At-a-glance: matches, scanned, platforms, time, confidence breakdown |
+| **Match Cards** | Expandable cards with full score breakdowns and entity overlap |
+| **Search History** | All past searches saved locally — click to reload |
+| **JSON/PDF Export** | Download any report as JSON or PDF |
 
 ### Network Access
 
-By default the dashboard runs on `127.0.0.1:5000` (localhost only). To allow access from other machines on your network:
-
 ```bash
+# Localhost only (default)
+python app.py --port 5000
+
+# Accessible from network
 python app.py --host 0.0.0.0 --port 8080
 ```
-
-⚠️ **Warning**: Exposing the dashboard to the network means anyone with access to your IP can use it. Only do this on trusted networks.
 
 ### Dashboard Architecture
 
@@ -217,12 +285,60 @@ python app.py --host 0.0.0.0 --port 8080
 Browser (UI)  ←──SSE──→  Flask (app.py)  ──→  texttrace.py
      │                         │
      │                         ├── /api/search (POST) → starts background search
-     │                         ├── /api/progress/<id> (SSE stream) → real-time updates
+     │                         ├── /api/progress/<id> (SSE) → real-time updates
      │                         ├── /api/history (GET) → past searches
-     │                         └── /api/history/<id>/download (GET) → JSON export
+     │                         ├── /api/history/<id> (GET) → full report
+     │                         ├── /api/history/<id>/download (GET) → JSON export
+     │                         ├── /api/history/<id>/pdf (GET) → PDF report
+     │                         └── /api/health (GET) → feature flags
      │
      └── data/history/*.json → locally saved reports
 ```
+
+---
+
+## 🔑 No API Keys Required
+
+TextTrace uses **only free, no-auth methods**:
+
+- **DuckDuckGo** — HTML search scraping (via curl_cffi for stealth TLS)
+- **Bing** — search result parsing (via curl_cffi)
+- **Yandex** — search result parsing
+- **Google** — search via curl_cffi browser impersonation
+- **Wayback Machine** — free CDX API, no auth
+- **Google Cache** — public cache URLs
+- **Archive.today** — public archive
+- **Paste sites** — Pastebin, Paste.ee search
+
+No paid APIs. No rate-limited free tiers. No sign-ups. This is an **OPSEC advantage** — no API keys to leak, no accounts to compromise.
+
+---
+
+## 📋 Real-World OSINT Use Cases
+
+| Use Case | Example |
+|----------|---------|
+| **Cross-posting detection** | Same person posting identical content across platforms under different identities |
+| **Content theft/plagiarism** | Someone copied your post verbatim |
+| **Misinformation tracking** | Same narrative appearing on multiple platforms simultaneously |
+| **Dual-identity linking** | Matching writing style to connect anonymous accounts |
+| **Authorship attribution** | Link anonymous posts to a known author via stylometric analysis |
+| **Brand monitoring** | Where is your content being reshared? |
+| **Influence operation detection** | Coordinated messaging across platforms |
+| **Deleted content recovery** | Find cached/archived versions of removed posts |
+| **Leak detection** | Find your text on paste sites (Pastebin, etc.) |
+| **Multi-hop tracing** | Chain mode: trace matches, extract their text, trace again |
+
+---
+
+## ⚠️ Limitations
+
+- Search engines may rate-limit on excessive queries (exponential backoff handles this)
+- Cannot access private/locked social media posts
+- Stylometric matching needs 50+ words to be reliable
+- Content extraction depends on page being publicly accessible
+- Google may occasionally block even curl_cffi — use `--tor` for IP rotation
+- Watch mode runs indefinitely until Ctrl+C
 
 ---
 
