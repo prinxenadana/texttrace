@@ -234,6 +234,8 @@ Automatically identifies platforms from result URLs:
 
 TextTrace includes a **local web dashboard** — a modern, dark-themed OSINT UI with real-time streaming, confidence badges, entity tags, diff view, and identity graph visualization.
 
+![TextTrace v2 Dashboard](dashboard-screenshot.png)
+
 ### Quick Start
 
 ```bash
