@@ -759,6 +759,160 @@ async def search_google(query: str, max_results: int = 20, client: httpx.AsyncCl
     return results[:max_results]
 
 
+async def search_github_code(query: str, max_results: int = 20, client: httpx.AsyncClient = None, github_token: str = None) -> list:
+    """Search GitHub Code (public repos) for matching text.
+    Strategy:
+    1. If github_token provided → use GitHub REST API (authenticated, 30 req/min)
+    2. No token → use DDG/Bing with site:github.com operator (scrapes GitHub results)
+    No API key required for the fallback — works for free."""
+    results = []
+    try:
+        # Strategy 1: Authenticated GitHub API
+        if github_token:
+            headers = _random_headers()
+            headers["Accept"] = "application/vnd.github+json"
+            headers["Authorization"] = f"Bearer {github_token}"
+
+            if client is None:
+                client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers)
+
+            resp = await _async_get(client, "https://api.github.com/search/code", params={
+                "q": query,
+                "per_page": min(max_results, 30),
+            })
+
+            if resp and resp.status_code == 200:
+                data = resp.json()
+                for item in data.get("items", []):
+                    repo = item.get("repository", {})
+                    repo_full = repo.get("full_name", "")
+                    path = item.get("path", "")
+                    html_url = item.get("html_url", "")
+                    title = f"{repo_full}/{path}" if repo_full else path
+                    raw_url = f"https://raw.githubusercontent.com/{repo_full}/{repo.get('default_branch', 'main')}/{path}"
+                    results.append({"title": title, "url": html_url, "snippet": item.get("name", ""), "engine": "github_code", "raw_url": raw_url})
+
+            return results[:max_results]
+
+        # Strategy 2: Search repos via API (unauthenticated, works)
+        headers = _random_headers()
+        headers["Accept"] = "application/vnd.github+json"
+
+        repo_client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers)
+        resp = await _async_get(repo_client, "https://api.github.com/search/repositories", params={
+            "q": query,
+            "per_page": min(max_results, 10),
+        })
+        await repo_client.aclose()
+
+        if resp and resp.status_code == 200:
+            data = resp.json()
+            for item in data.get("items", []):
+                full_name = item.get("full_name", "")
+                html_url = item.get("html_url", "")
+                desc = item.get("description", "")[:200] if item.get("description") else ""
+                stars = item.get("stargazers_count", 0)
+                results.append({
+                    "title": f"{full_name} ★{stars}",
+                    "url": html_url,
+                    "snippet": desc,
+                    "engine": "github_code",
+                })
+
+        # Strategy 3: Use DDG with site:github.com for code/file results
+        site_query = f"site:github.com {query}"
+        if HAS_CURL_CFFI:
+            ddg_resp = cffi_requests.get(
+                "https://html.duckduckgo.com/html/",
+                params={"q": site_query},
+                impersonate="chrome131",
+                timeout=20,
+            )
+            html = ddg_resp.text if ddg_resp.status_code == 200 else ""
+        else:
+            if client is None:
+                client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=_random_headers())
+            ddg_resp = await _async_get(client, "https://html.duckduckgo.com/html/", params={"q": site_query})
+            html = ddg_resp.text if ddg_resp and ddg_resp.status_code == 200 and len(ddg_resp.text) > 2000 else ""
+
+        if html:
+            soup = BeautifulSoup(html, 'html.parser')
+            for div in soup.find_all('div', class_=re.compile(r'result')):
+                title_elem = div.find('a', class_='result__a')
+                if not title_elem:
+                    continue
+                raw_url = title_elem.get('href', '')
+                title = title_elem.get_text(strip=True)
+                url_match = re.search(r'uddg=([^&]+)', raw_url)
+                url = urllib.parse.unquote(url_match.group(1)) if url_match else raw_url
+                if url and 'github.com' in url:
+                    results.append({"title": title, "url": url, "snippet": "", "engine": "github_code"})
+
+    except Exception as e:
+        print(f"  [!] GitHub Code search error: {e}")
+
+    # Deduplicate by URL
+    seen = set()
+    unique = []
+    for r in results:
+        if r['url'] not in seen:
+            seen.add(r['url'])
+            unique.append(r)
+
+    return unique[:max_results]
+
+
+async def search_github_gists(query: str, max_results: int = 15, client: httpx.AsyncClient = None) -> list:
+    """Search GitHub Gists for matching text.
+    Gists are commonly used for pasting code, notes, leaked text.
+    Uses GitHub's REST API — no auth needed (10 req/min unauthenticated)."""
+    results = []
+    try:
+        headers = _random_headers()
+        headers["Accept"] = "application/vnd.github+json"
+
+        if client is None:
+            client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers)
+
+        # GitHub Gist search isn't a direct API endpoint, but we can use
+        # the main GitHub search API with gist qualifier, or scrape the page
+        # Use the web search approach for gists since API doesn't have gist search
+        # Instead, we search via the regular search page for gists
+        if HAS_CURL_CFFI:
+            resp = cffi_requests.get(
+                "https://gist.github.com/search",
+                params={"q": query},
+                impersonate="chrome131",
+                timeout=20,
+            )
+            html = resp.text if resp.status_code == 200 else ""
+        else:
+            if client is None:
+                client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers)
+            resp = await _async_get(client, "https://gist.github.com/search", params={"q": query})
+            html = resp.text if resp and resp.status_code == 200 else ""
+
+        if not html:
+            return results
+
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # Parse gist results from the HTML
+        for link in soup.find_all('a', href=True):
+            href = link.get('href', '')
+            # Match gist URLs: /username/hash or gist.github.com/username/hash
+            gist_match = re.match(r'/([a-zA-Z0-9\-]+)/([a-f0-9]{20,40})', href)
+            if gist_match and gist_match.group(1) not in ('discover', 'global', 'search', 'login', 'signup', 'settings', 'explore', 'trending'):
+                url = f"https://gist.github.com{href}" if href.startswith('/') else href
+                title = link.get_text(strip=True) or f"Gist by {gist_match.group(1)}"
+                results.append({"title": title, "url": url, "snippet": "", "engine": "github_gist"})
+
+    except Exception as e:
+        print(f"  [!] GitHub Gist search error: {e}")
+
+    return results[:max_results]
+
+
 async def search_wayback(url_pattern: str, client: httpx.AsyncClient = None) -> list:
     """Search Wayback Machine CDX API for archived versions of URLs matching a pattern."""
     results = []
@@ -1070,6 +1224,7 @@ async def run_texttrace(
     watch_mode: bool = False,
     watch_interval: int = 3600,
     output_dir: str = None,
+    github_token: str = None,
 ) -> dict:
     """Main TextTrace v2 pipeline — async, OPSEC-hardened, full coverage."""
 
@@ -1097,7 +1252,7 @@ async def run_texttrace(
 
     # Aggressive = all engines, max results, deep crawl
     if aggressive:
-        engines = ["duckduckgo", "bing", "yandex", "google"]
+        engines = ["duckduckgo", "bing", "yandex", "google", "github_code", "github_gist"]
         max_results = 50
         _emit("opsec", "[⚡] Aggressive mode: all engines, max results")
 
@@ -1148,6 +1303,8 @@ async def run_texttrace(
             engines = ["duckduckgo", "bing"]
             if check_google:
                 engines.append("google")
+            engines.append("github_code")
+            engines.append("github_gist")
 
         all_results = []
         seen_urls = set()
@@ -1168,6 +1325,10 @@ async def run_texttrace(
                     search_tasks.append(("yandex", query, delay))
                 elif engine == "google":
                     search_tasks.append(("google", query, delay))
+                elif engine == "github_code":
+                    search_tasks.append(("github_code", query, delay))
+                elif engine == "github_gist":
+                    search_tasks.append(("github_gist", query, delay))
 
         # Execute searches with concurrency control
         semaphore = asyncio.Semaphore(5 if not stealth else 2)
@@ -1183,6 +1344,10 @@ async def run_texttrace(
                     return await search_yandex(query, max_results, client)
                 elif engine == "google":
                     return await search_google(query, max_results, client)
+                elif engine == "github_code":
+                    return await search_github_code(query, max_results, client, github_token=github_token)
+                elif engine == "github_gist":
+                    return await search_github_gists(query, max_results, client)
             return []
 
         # Run all searches concurrently
@@ -1728,6 +1893,7 @@ Examples:
     parser.add_argument("--proxy", help="Custom proxy URL (e.g., socks5://host:port, http://host:port)")
     parser.add_argument("--stealth", action="store_true", help="Stealth mode: max delays, snippet-only, no page fetch")
     parser.add_argument("--aggressive", action="store_true", help="Aggressive mode: all engines, max results, deep crawl")
+    parser.add_argument("--github-token", help="GitHub PAT for authenticated code search (30 req/min vs 10 unauthenticated)")
 
     # Coverage
     parser.add_argument("--no-archives", action="store_true", help="Skip archive checks (Wayback, Google Cache)")
@@ -1753,7 +1919,7 @@ Examples:
 
     # Parse engines
     if args.engines == "all":
-        engines = ["duckduckgo", "bing", "yandex", "google"]
+        engines = ["duckduckgo", "bing", "yandex", "google", "github_code", "github_gist"]
     else:
         engines = [e.strip() for e in args.engines.split(",")]
 
@@ -1878,6 +2044,7 @@ Examples:
         chain_mode=args.chain,
         chain_depth=args.depth,
         output_dir=args.output,
+        github_token=args.github_token,
     ))
 
     if args.json:

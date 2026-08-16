@@ -211,10 +211,11 @@
                 <div class="option-item">
                     <label>Search Engines</label>
                     <select id="engines">
-                        <option value="duckduckgo,bing">DDG + Bing</option>
-                        <option value="all">All Engines (+ Google, Yandex)</option>
-                        <option value="duckduckgo,bing,yandex">DDG + Bing + Yandex</option>
-                        <option value="duckduckgo,google">DDG + Google</option>
+                        <option value="duckduckgo,bing,github_code,github_gist">DDG + Bing + GitHub</option>
+                        <option value="all">All Engines (+ Google, Yandex, GitHub)</option>
+                        <option value="duckduckgo,bing,yandex,github_code">DDG + Bing + Yandex + GitHub</option>
+                        <option value="duckduckgo,google,github_code">DDG + Google + GitHub</option>
+                        <option value="github_code,github_gist">GitHub Only (Code + Gists)</option>
                         <option value="duckduckgo">DDG Only</option>
                         <option value="bing">Bing Only</option>
                     </select>
@@ -281,6 +282,10 @@
                     <div class="input-group" style="margin:0">
                         <label class="input-label">Custom Proxy</label>
                         <input type="text" id="proxyUrl" placeholder="socks5://host:port  or  http://host:port">
+                    </div>
+                    <div class="input-group" style="margin:0">
+                        <label class="input-label">GitHub Token (optional — for code search API)</label>
+                        <input type="text" id="githubToken" placeholder="ghp_xxxxx — enables authenticated GitHub code search (30 req/min)">
                     </div>
                 </div>
             </div>
@@ -383,6 +388,7 @@ function startSearch() {
     const checkGoogle = document.getElementById('checkGoogle').checked;
     const chain = document.getElementById('modeChain').checked;
     const chainDepth = document.getElementById('chainDepth').value;
+    const githubToken = document.getElementById('githubToken').value.trim();
 
     if (currentTab === 'text' && !text) { alert('Enter source text'); return; }
     if (currentTab === 'url' && !url) { alert('Enter a URL'); return; }
@@ -395,6 +401,7 @@ function startSearch() {
         site, exclude, tor, stealth, aggressive, proxy,
         check_archives: checkArchives, check_paste: checkPaste, check_google: checkGoogle,
         chain, chain_depth: parseInt(chainDepth),
+        github_token: githubToken || undefined,
     };
 
     document.getElementById('searchBtn').disabled = true;

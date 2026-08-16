@@ -72,6 +72,7 @@ def api_search():
     check_google = data.get("check_google", True)
     chain = data.get("chain", False)
     chain_depth = int(data.get("chain_depth", 1))
+    github_token = data.get("github_token", "").strip() or None
 
     if not source_text and not source_url:
         return jsonify({"error": "Either text or url is required"}), 400
@@ -114,6 +115,7 @@ def api_search():
                     check_google=check_google,
                     chain_mode=chain,
                     chain_depth=chain_depth,
+                    github_token=github_token,
                 )
             )
             SESSIONS[session_id]["report"] = report

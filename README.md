@@ -307,6 +307,8 @@ TextTrace uses **only free, no-auth methods**:
 - **Bing** — search result parsing (via curl_cffi)
 - **Yandex** — search result parsing
 - **Google** — search via curl_cffi browser impersonation
+- **GitHub Code** — search public repo code (no API key)
+- **GitHub Gists** — search gists (common for leaked text/pastebin-style content)
 - **Wayback Machine** — free CDX API, no auth
 - **Google Cache** — public cache URLs
 - **Archive.today** — public archive
