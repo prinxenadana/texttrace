@@ -301,7 +301,38 @@ Browser (UI)  ←──SSE──→  Flask (app.py)  ──→  texttrace.py
 
 ## 🔑 No API Keys Required
 
-TextTrace uses **only free, no-auth methods**:
+TextTrace uses **only free, no-auth methods** (core) — with optional auth for enhanced coverage:
+
+| Feature | No Key? | With Key? |
+|---------|---------|-----------|
+| DDG / Bing / Yandex search | ✅ Free | — |
+| GitHub Code search | ✅ Free (repos + DDG fallback) | `--github-token` → full code search API (30 req/min) |
+| Wayback / Google Cache / Archive.today | ✅ Free | — |
+| Paste sites | ✅ Free | — |
+| Stylometry / Fuzzy match | ✅ Free | — |
+
+## 🌍 Multi-Language Support
+
+TextTrace works with **any language** — not just English:
+
+| Language | Support | Tokenization |
+|----------|---------|-------------|
+| English / Latin scripts | ✅ Full | Word-level (whitespace) |
+| Chinese (中文) | ✅ Full | Character-level + bigrams |
+| Japanese (日本語) | ✅ Full | Character-level (Hiragana/Katakana/Kanji) |
+| Korean (한국어) | ✅ Full | Character-level (Hangul) |
+| Arabic (العربية) | ✅ Full | Word-level + Arabic stop words |
+| Russian / Cyrillic (Русский) | ✅ Full | Word-level |
+| Hindi / Devanagari (हिन्दी) | ✅ Full | Word-level |
+| Mixed / Multilingual | ✅ Full | Auto-detect + mixed tokenization |
+
+**How it works:**
+- Auto-detects the script/language from Unicode ranges
+- CJK text: character-level tokenization + bigram matching (no spaces between words)
+- Arabic: word-level + Arabic stop word filtering
+- Named entity extraction works for all scripts (Unicode regex)
+- Stylometry adapts per language (CJK: char-level n-grams; Latin: word-level)
+- Search queries adapt: CJK uses phrase queries, Arabic filters common words
 
 - **DuckDuckGo** — HTML search scraping (via curl_cffi for stealth TLS)
 - **Bing** — search result parsing (via curl_cffi)

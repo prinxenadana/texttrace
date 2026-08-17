@@ -221,14 +221,49 @@ def cache_put(fingerprint: str, report: dict):
 
 # ─── Text Normalization ────────────────────────────────────────────────────────
 
-def normalize_text(text: str) -> str:
-    """Normalize text for comparison: lowercase, collapse whitespace, strip URLs/special chars."""
+def normalize_text(text: str, lang: str = None) -> str:
+    """Normalize text for comparison: lowercase, collapse whitespace, strip URLs.
+    Preserves Unicode — works for ALL languages (CJK, Arabic, Cyrillic, Devanagari, etc.).
+    For CJK languages (zh/ja/ko), splits into character-level tokens for proper comparison."""
     text = text.lower()
     text = re.sub(r'https?://\S+', '', text)
     text = re.sub(r'[@#]', '', text)
-    text = re.sub(r'[^\x00-\x7F]+', ' ', text)
+    # Keep Unicode! Don't strip non-ASCII — that was breaking CJK/Arabic/etc.
+    # Only strip control characters (except common whitespace)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
+
+
+def tokenize_text(text: str, lang: str = None) -> list:
+    """Tokenize text into words. Handles CJK (Chinese/Japanese/Korean) which have no spaces.
+    For CJK: splits into character-level bigrams for proper matching.
+    For other languages: standard whitespace tokenization."""
+    normalized = normalize_text(text, lang)
+
+    # Detect CJK characters
+    cjk_ranges = (
+        '\u4e00-\u9fff'   # CJK Unified Ideographs (Chinese)
+        '\u3040-\u309f'   # Hiragana (Japanese)
+        '\u30a0-\u30ff'   # Katakana (Japanese)
+        '\uac00-\ud7af'   # Hangul Syllables (Korean)
+        '\u0400-\u04ff'   # Cyrillic (Russian, etc.)
+        '\u0600-\u06ff'   # Arabic
+        '\u0900-\u097f'   # Devanagari (Hindi, etc.)
+    )
+    has_cjk = bool(re.search(f'[{cjk_ranges}]', normalized))
+
+    if has_cjk:
+        # For CJK: character-level tokenization (bigrams for matching)
+        chars = [c for c in normalized if c.strip()]
+        # Create bigrams for better matching
+        if len(chars) >= 2:
+            bigrams = [chars[i] + chars[i+1] for i in range(len(chars)-1)]
+            return chars + bigrams
+        return chars
+    else:
+        # Standard whitespace tokenization
+        return normalized.split()
 
 
 def text_fingerprint(text: str) -> str:
@@ -302,9 +337,9 @@ def partial_match_score(source: str, target: str) -> float:
 # ─── Tier 3: Extended Stylometric Match ────────────────────────────────────────
 
 def ngram_cosine_similarity(text_a: str, text_b: str, n: int = 3) -> float:
-    """N-gram cosine similarity — captures writing style even with different wording."""
+    """N-gram cosine similarity — captures writing style even with different wording. Works for all languages."""
     def get_ngrams(text: str, n: int) -> Counter:
-        words = normalize_text(text).split()
+        words = tokenize_text(text)
         return Counter(tuple(words[i:i+n]) for i in range(len(words) - n + 1))
 
     ngrams_a = get_ngrams(text_a, n)
@@ -328,8 +363,8 @@ def ngram_cosine_similarity(text_a: str, text_b: str, n: int = 3) -> float:
 
 
 def vocabulary_richness(text: str) -> dict:
-    """Vocabulary richness metrics — distinctive per author."""
-    words = normalize_text(text).split()
+    """Vocabulary richness metrics — distinctive per author. Works for all languages."""
+    words = tokenize_text(text)
     if not words:
         return {"ttr": 0, "hapax_ratio": 0, "yules_k": 0}
 
@@ -365,9 +400,19 @@ def punctuation_fingerprint(text: str) -> dict:
 
 
 def sentence_length_stats(text: str) -> dict:
-    """Sentence length distribution — distinctive per author."""
-    sentences = re.split(r'[.!?]+', text)
-    lengths = [len(s.split()) for s in sentences if len(s.split()) > 0]
+    """Sentence length distribution — distinctive per author. Works for all languages."""
+    # Split on common sentence terminators + CJK sentence-ending marks
+    sentences = re.split(r'[.!?。！？]+', text)
+    lengths = []
+    for s in sentences:
+        # For CJK: length = char count; for Latin: length = word count
+        has_cjk = bool(re.search(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]', s))
+        if has_cjk:
+            l = len(s.strip())
+        else:
+            l = len(s.split())
+        if l > 0:
+            lengths.append(l)
     if not lengths:
         return {"sent_mean": 0, "sent_std": 0, "sent_min": 0, "sent_max": 0, "sent_median": 0}
 
@@ -474,9 +519,12 @@ def extract_entities(text: str) -> dict:
         "hashtags": list(set(re.findall(r'#([a-zA-Z0-9_]{2,})', text))),
     }
 
-    # Named entity heuristics — capitalized sequences
+    # Named entity heuristics — capitalized sequences (works for Latin + Unicode)
+    # Match capitalized Latin words (e.g., "Prince Nadana", "New York")
     cap_words = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b', text)
-    entities["named_entities"] = list(set(cap_words))[:20]
+    # Also match CJK/Arabic/Cyrillic named entities (sequences of non-space non-Latin chars)
+    unicode_names = re.findall(r'[\u4e00-\u9fff\u3040-\u30ff\u30a0-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff\u0900-\u097f]{2,8}', text)
+    entities["named_entities"] = list(set(cap_words + unicode_names))[:20]
 
     return entities
 
@@ -1080,11 +1128,31 @@ def detect_platform(url: str) -> str:
 def generate_search_queries(text: str, site: str = None, exclude: str = None) -> list:
     """Generate multiple search queries from source text for maximum coverage.
     Supports site: and -site: operators.
+    Multi-language: detects CJK/Arabic/Cyrillic text and adapts query generation.
     """
     queries = []
     normalized = normalize_text(text)
-    words = normalized.split()
 
+    # Detect language by Unicode ranges
+    cjk_ranges = '\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af'
+    arabic_range = '\u0600-\u06ff'
+    cyrillic_range = '\u0400-\u04ff'
+    devanagari_range = '\u0900-\u097f'
+
+    is_cjk = bool(re.search(f'[{cjk_ranges}]', text))
+    is_arabic = bool(re.search(f'[{arabic_range}]', text))
+    is_cyrillic = bool(re.search(f'[{cyrillic_range}]', text))
+    is_devanagari = bool(re.search(f'[{devanagari_range}]', text))
+    is_non_latin = is_cjk or is_arabic or is_cyrillic or is_devanagari
+
+    # For non-Latin text, use tokenize_text instead of split()
+    if is_non_latin:
+        words = tokenize_text(text)
+    else:
+        words = normalized.split()
+
+    # Stop words — English only (for filtering English common words)
+    # Non-English languages don't need these — their common words are different
     stop_words = {
         'the','a','an','is','it','in','on','at','to','for','of','and','or','but',
         'this','that','with','was','are','be','have','has','had','not','they','we',
@@ -1102,6 +1170,12 @@ def generate_search_queries(text: str, site: str = None, exclude: str = None) ->
         'while','those','too','now','down','off','once',
     }
 
+    # Arabic stop words (common)
+    arabic_stop = {'في','من','على','إلى','عن','مع','هذا','هذه','ذلك','التي','الذي','هو','هي','كان','كانت','لا','لم','لن','ما','أن','إن','قد','بل','ثم','أو','و','حتى','بعد','بين','عند','كل','بعض','غير','أي','أيضا','كذلك','ذلك','هنا','هناك','كيف','لماذا','متى','أين'}
+    # Add Arabic stop words if Arabic detected
+    if is_arabic:
+        stop_words = stop_words.union(arabic_stop)
+
     # Build operator suffix
     op_suffix = ""
     if site:
@@ -1112,21 +1186,43 @@ def generate_search_queries(text: str, site: str = None, exclude: str = None) ->
             if ex:
                 op_suffix += f" -site:{ex}"
 
-    # ── Strategy 1: Proper nouns / distinctive capitalized terms ──
+    # ── Strategy 1: Proper nouns / distinctive terms ──
     original_words = text.split()
     proper_nouns = []
-    for w in original_words:
-        clean = re.sub(r'[^a-zA-Z0-9\-]', '', w)
-        if not clean or len(clean) <= 2:
-            continue
-        is_capitalized = clean[0].isupper()
-        is_all_caps = clean.isupper() and len(clean) > 2
-        is_hyphenated = '-' in clean and len(clean) > 4
 
-        if is_capitalized or is_all_caps or is_hyphenated:
-            lower = clean.lower()
-            if lower not in stop_words and lower not in {'people','often','one','two','also','around'}:
-                proper_nouns.append(clean)
+    if is_non_latin:
+        # For CJK/Arabic/Cyrillic: extract distinctive Unicode sequences
+        unicode_terms = re.findall(
+            f'[{cjk_ranges}{arabic_range}{cyrillic_range}{devanagari_range}]{{2,15}}',
+            text
+        )
+        # Deduplicate and keep longer terms (more specific)
+        seen = set()
+        for term in sorted(unicode_terms, key=len, reverse=True):
+            if term not in seen:
+                seen.add(term)
+                proper_nouns.append(term)
+
+        # Also extract Latin proper nouns if any (mixed-language text)
+        for w in original_words:
+            clean = re.sub(r'[^a-zA-Z0-9\-]', '', w)
+            if clean and len(clean) > 2 and clean[0].isupper():
+                if clean.lower() not in stop_words:
+                    proper_nouns.append(clean)
+    else:
+        # Standard Latin proper noun extraction
+        for w in original_words:
+            clean = re.sub(r'[^a-zA-Z0-9\-]', '', w)
+            if not clean or len(clean) <= 2:
+                continue
+            is_capitalized = clean[0].isupper()
+            is_all_caps = clean.isupper() and len(clean) > 2
+            is_hyphenated = '-' in clean and len(clean) > 4
+
+            if is_capitalized or is_all_caps or is_hyphenated:
+                lower = clean.lower()
+                if lower not in stop_words and lower not in {'people','often','one','two','also','around'}:
+                    proper_nouns.append(clean)
 
     proper_nouns = list(dict.fromkeys(proper_nouns))
 
@@ -1136,18 +1232,17 @@ def generate_search_queries(text: str, site: str = None, exclude: str = None) ->
             for j in range(i + 1, min(len(proper_nouns), 10)):
                 pair = f'{proper_nouns[i]} {proper_nouns[j]}'
                 specificity = sum(len(w) for w in [proper_nouns[i], proper_nouns[j]])
-                if '-' in proper_nouns[i] or '-' in proper_nouns[j]:
-                    specificity += 10
                 all_pairs.append((pair, specificity))
 
         all_pairs.sort(key=lambda x: x[1], reverse=True)
         for pair, _ in all_pairs:
             queries.append(pair + op_suffix)
 
-        # Boolean AND queries
-        if len(proper_nouns) >= 2:
-            top2 = sorted(proper_nouns, key=len, reverse=True)[:2]
-            queries.append(f"{top2[0]} AND {top2[1]}" + op_suffix)
+        # Boolean AND queries (only for Latin terms — CJK doesn't need AND)
+        if not is_non_latin:
+            if len(proper_nouns) >= 2:
+                top2 = sorted(proper_nouns, key=len, reverse=True)[:2]
+                queries.append(f"{top2[0]} AND {top2[1]}" + op_suffix)
 
         if len(proper_nouns) >= 3:
             sorted_nouns = sorted(proper_nouns, key=len, reverse=True)
@@ -1155,22 +1250,32 @@ def generate_search_queries(text: str, site: str = None, exclude: str = None) ->
                 queries.append(f'{sorted_nouns[i]} {sorted_nouns[i+1]} {sorted_nouns[i+2]}' + op_suffix)
 
     # ── Strategy 2: Content word groups ──
-    content_words = [w for w in words if w not in stop_words and len(w) > 2]
-    if len(content_words) >= 3:
-        group_size = min(4, len(content_words))
-        for i in range(0, min(len(content_words), 12), 3):
-            group = content_words[i:i + group_size]
-            if len(group) >= 3:
-                queries.append(' '.join(group) + op_suffix)
+    if is_non_latin:
+        # For CJK: use longer character sequences as queries
+        # Take the longest distinctive terms
+        for noun in proper_nouns[:5]:
+            if len(noun) >= 2:
+                queries.append(noun + op_suffix)
+        # Also use the full normalized text as a phrase query
+        if len(normalized) >= 4:
+            queries.append(f'"{normalized[:100]}"' + op_suffix)
+    else:
+        content_words = [w for w in words if w not in stop_words and len(w) > 2]
+        if len(content_words) >= 3:
+            group_size = min(4, len(content_words))
+            for i in range(0, min(len(content_words), 12), 3):
+                group = content_words[i:i + group_size]
+                if len(group) >= 3:
+                    queries.append(' '.join(group) + op_suffix)
 
     # ── Strategy 3: Short distinctive quoted phrases ──
-    if len(words) >= 3:
+    if not is_non_latin and len(words) >= 3:
         phrase = []
         for w in words:
             if w not in stop_words and len(w) > 2:
                 phrase.append(w)
                 if len(phrase) >= 3:
-                    queries.append(f'"{ " ".join(phrase) }"' + op_suffix)
+                    queries.append(f'"{" ".join(phrase)}"' + op_suffix)
                     phrase = []
             else:
                 if len(phrase) >= 3:
