@@ -600,9 +600,12 @@ async def _async_get(client: httpx.AsyncClient, url: str, params: dict = None, r
         try:
             resp = await client.get(url, params=params)
             if resp.status_code in (202, 429):
-                # Rate limited — exponential backoff
-                wait = (8 if resp.status_code == 202 else 15) * (2 ** attempt) + random.uniform(1, 5)
-                print(f"    [!] Rate limited ({resp.status_code}), waiting {wait:.0f}s before retry {attempt+1}/{retries}...")
+                # Rate limited — cap backoff at 15s max, 2 retries only
+                if attempt >= 1:
+                    # Don't keep retrying rate-limited requests
+                    return None
+                wait = min(5 + random.uniform(1, 5), 15)
+                print(f"    [!] Rate limited ({resp.status_code}), waiting {wait:.0f}s before retry...")
                 await asyncio.sleep(wait)
                 continue
             if resp.status_code == 403:
@@ -765,7 +768,9 @@ async def search_yandex(query: str, max_results: int = 15, client: httpx.AsyncCl
 
 
 async def search_google(query: str, max_results: int = 20, client: httpx.AsyncClient = None) -> list:
-    """Search Google via curl_cffi (stealth TLS) if available, else httpx."""
+    """Search Google via curl_cffi (stealth TLS) if available, else httpx.
+    Note: Google increasingly requires JS rendering. Results may be empty.
+    Falls back gracefully — other engines (DDG, Bing) usually provide enough coverage."""
     results = []
     try:
         if HAS_CURL_CFFI:
@@ -774,32 +779,54 @@ async def search_google(query: str, max_results: int = 20, client: httpx.AsyncCl
                 "https://www.google.com/search",
                 params={"q": query, "num": max_results},
                 impersonate="chrome131",
-                timeout=20,
+                timeout=10,
             )
-            text = resp.text
+            text = resp.text if resp.status_code == 200 else ""
         else:
             if client is None:
-                client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=_random_headers())
-            resp = await _async_get(client, "https://www.google.com/search", params={"q": query, "num": str(max_results)})
+                client = httpx.AsyncClient(timeout=10, follow_redirects=True, headers=_random_headers())
+            resp = await _async_get(client, "https://www.google.com/search", params={"q": query, "num": str(max_results)}, retries=0)
             if not resp or resp.status_code != 200:
                 return results
             text = resp.text
 
+        if not text:
+            return results
+
         soup = BeautifulSoup(text, 'html.parser')
+        
+        # Try multiple selectors for Google result parsing
+        # Method 1: class 'g' divs (standard)
         for g in soup.find_all('div', class_='g'):
             title_elem = g.find('h3')
             link_elem = g.find('a')
             snippet_elem = g.find('div', class_=['VwiC3b', 'yDYNvb'])
-
             if not link_elem:
                 continue
-
             url = link_elem.get('href', '')
             title = title_elem.get_text(strip=True) if title_elem else ''
             snippet = snippet_elem.get_text(strip=True) if snippet_elem else ''
-
             if url and url.startswith('http'):
                 results.append({"title": title, "url": url, "snippet": snippet, "engine": "google"})
+
+        # Method 2: If no results from method 1, try alternate selectors
+        if not results:
+            for a in soup.find_all('a', href=True):
+                href = a.get('href', '')
+                if href.startswith('/url?q='):
+                    # Google redirect URL
+                    import urllib.parse
+                    url_match = re.search(r'url\?q=([^&]+)', href)
+                    if url_match:
+                        url = urllib.parse.unquote(url_match.group(1))
+                        title = a.get_text(strip=True)
+                        if title and url.startswith('http'):
+                            results.append({"title": title, "url": url, "snippet": "", "engine": "google"})
+
+        if not results and len(text) > 5000:
+            # Google is likely serving a JS-rendered page with no static results
+            # This is expected — DDG and Bing will cover the gap
+            pass
 
     except Exception as e:
         print(f"  [!] Google search error: {e}")
@@ -962,22 +989,30 @@ async def search_github_gists(query: str, max_results: int = 15, client: httpx.A
 
 
 async def search_wayback(url_pattern: str, client: httpx.AsyncClient = None) -> list:
-    """Search Wayback Machine CDX API for archived versions of URLs matching a pattern."""
+    """Search Wayback Machine CDX API for archived versions of URLs matching a pattern.
+    Uses short timeout (8s) and no retries to avoid blocking the pipeline."""
     results = []
     try:
         if client is None:
-            client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=_random_headers())
+            client = httpx.AsyncClient(timeout=8, follow_redirects=True, headers=_random_headers())
 
-        resp = await _async_get(client, "https://web.archive.org/cdx/search/cdx", params={
-            "url": url_pattern,
-            "matchType": "domain",
-            "output": "json",
-            "fl": "original,timestamp,statuscode",
-            "limit": 20,
-            "filter": "statuscode:200",
-        })
+        try:
+            resp = await client.get("https://web.archive.org/cdx/search/cdx", params={
+                "url": url_pattern,
+                "matchType": "domain",
+                "output": "json",
+                "fl": "original,timestamp,statuscode",
+                "limit": 20,
+                "filter": "statuscode:200",
+            })
+        except httpx.TimeoutException:
+            print("  [!] Wayback CDX timeout (8s) — skipping archive search")
+            return results
 
-        if not resp or resp.status_code != 200:
+        if not resp or resp.status_code in (429, 503):
+            print(f"  [!] Wayback CDX rate limited ({resp.status_code if resp else 'no response'}) — skipping")
+            return results
+        if resp.status_code != 200:
             return results
 
         data = resp.json()
@@ -1082,12 +1117,12 @@ async def search_paste_sites(query: str, client: httpx.AsyncClient = None) -> li
 # ─── Content Extraction ────────────────────────────────────────────────────────
 
 async def extract_text_from_url(url: str, client: httpx.AsyncClient = None) -> str:
-    """Scrape and extract visible text from a URL."""
+    """Scrape and extract visible text from a URL. Short timeout (8s) to stay fast."""
     try:
         if client is None:
-            client = httpx.AsyncClient(timeout=20, follow_redirects=True, headers=_random_headers())
+            client = httpx.AsyncClient(timeout=8, follow_redirects=True, headers=_random_headers())
 
-        resp = await _async_get(client, url)
+        resp = await _async_get(client, url, retries=0)  # No retries for content fetch
         if not resp or resp.status_code != 200:
             return ""
 
@@ -1320,9 +1355,9 @@ async def run_texttrace(
     tor: bool = False,
     stealth: bool = False,
     aggressive: bool = False,
-    check_archives: bool = True,
+    check_archives: bool = False,
     check_paste_sites: bool = True,
-    check_google: bool = True,
+    check_google: bool = False,
     batch_mode: bool = False,
     chain_mode: bool = False,
     chain_depth: int = 1,
@@ -1506,6 +1541,7 @@ async def run_texttrace(
 
         # Checkpoint every 10 results
         checkpoint_count = 0
+        fetched_count = 0  # Limit page fetching for speed
 
         for i, result in enumerate(all_results):
             platform = detect_platform(result['url'])
@@ -1551,7 +1587,9 @@ async def run_texttrace(
                     match_data["match_tier"] = "fuzzy (partial)"
 
             # If snippet match is low and content extraction enabled, fetch page
-            if extract_content and match_data["max_score"] < threshold:
+            # Limit to 10 pages max for speed — most matches are found in snippets
+            if extract_content and match_data["max_score"] < threshold and fetched_count < 10:
+                fetched_count += 1
                 _emit("fetching", f"    [{i+1}/{len(all_results)}] Fetching: {result['url'][:80]}...", current=i+1, total=len(all_results))
                 page_text = await extract_text_from_url(result['url'], client)
 
